@@ -12,60 +12,98 @@ const int mqttPort = 8883;
 const char* mqttUser = "smartlocker";
 const char* mqttPassword = "Chamikaudu415";
 
-// MQTT topics
-const char* lockerCode = "L1";
-const char* lockerControlTopic = "locker/1/control";
-const char* lockerStateTopic = "locker/1/state";
+// -------- LOCKER SETUP --------
+const int lockerCount = 4;
+const char* lockerCodes[lockerCount] = {"L1", "L2", "L3", "L4"};
 
 // Pins
-const int relayPin = 23;     // Relay for solenoid lock
-const int ledBuiltin = 2;    // ESP32 built-in LED
-const int doorSensorPin = 4; // Magnetic sensor: HIGH=open, LOW=closed (adjust as needed)
+const int relayPin = 23;   // L1 real lock
+const int ledPins[lockerCount] = {23, 18, 19, 21}; // L2–L4 LEDs (L1 uses relay)
+const int ledBuiltin = 2;
+const int doorSensorPin = 4;
+
+// MQTT topics
+char lockerControlTopics[lockerCount][64];
+char lockerStateTopics[lockerCount][64];
+char legacyControlTopics[lockerCount][64];
 
 WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
+
+// Door state (only for L1)
 String lastDoorState = "UNKNOWN";
 
-void applyLockerState(bool locked) {
-  // Active-low relay: LOW energizes relay, HIGH de-energizes relay.
+// ---------------- APPLY STATE ----------------
+void applyLockerState(int i, bool locked) {
+
+  // 🔹 L1 → RELAY (keep EXACT behavior)
+  if (i == 0) {
+    if (locked) {
+      digitalWrite(relayPin, HIGH); // OFF
+      digitalWrite(ledBuiltin, LOW);
+    } else {
+      digitalWrite(relayPin, LOW);  // ON
+      digitalWrite(ledBuiltin, HIGH);
+    }
+  }
+
+  // 🔹 L2–L4 → LEDs
+  else {
+    if (locked) {
+      digitalWrite(ledPins[i], LOW);   // OFF
+    } else {
+      digitalWrite(ledPins[i], HIGH);  // ON
+    }
+  }
+
+  // Publish state
   if (locked) {
-    digitalWrite(relayPin, HIGH);
-    digitalWrite(ledBuiltin, LOW);
-    mqttClient.publish(lockerStateTopic, "LOCKED", true);
+    mqttClient.publish(lockerStateTopics[i], "LOCKED", true);
   } else {
-    digitalWrite(relayPin, LOW);
-    digitalWrite(ledBuiltin, HIGH);
-    mqttClient.publish(lockerStateTopic, "UNLOCKED", true);
+    mqttClient.publish(lockerStateTopics[i], "UNLOCKED", true);
   }
 }
 
+// ---------------- DOOR SENSOR (L1 ONLY) ----------------
 void publishDoorState() {
   String currentDoorState = digitalRead(doorSensorPin) == HIGH ? "OPEN" : "CLOSED";
+
   if (currentDoorState != lastDoorState) {
-    mqttClient.publish(lockerStateTopic, currentDoorState.c_str(), true);
+    mqttClient.publish(lockerStateTopics[0], currentDoorState.c_str(), true);
     lastDoorState = currentDoorState;
   }
 }
 
+// ---------------- MQTT CALLBACK ----------------
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
+
   String message;
   for (unsigned int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
+
   message.trim();
   message.toUpperCase();
 
-  if (String(topic) != lockerControlTopic) {
-    return;
-  }
+  Serial.printf("MQTT msg topic=%s payload=%s\n", topic, message.c_str());
 
-  if (message == "LOCK") {
-    applyLockerState(true);
-  } else if (message == "UNLOCK") {
-    applyLockerState(false);
+  String incomingTopic = String(topic);
+
+  for (int i = 0; i < lockerCount; i++) {
+
+    if (incomingTopic == lockerControlTopics[i] ||
+        incomingTopic == legacyControlTopics[i]) {
+
+      if (message == "LOCK") {
+        applyLockerState(i, true);
+      } else if (message == "UNLOCK") {
+        applyLockerState(i, false);
+      }
+    }
   }
 }
 
+// ---------------- WIFI ----------------
 void connectWifi() {
   WiFi.begin(ssid, password);
   Serial.print("Connecting to Wi-Fi");
@@ -75,48 +113,80 @@ void connectWifi() {
     Serial.print(".");
   }
 
-  Serial.println();
-  Serial.println("Wi-Fi connected");
-  Serial.print("IP address: ");
+  Serial.println("\nWi-Fi connected");
   Serial.println(WiFi.localIP());
 }
 
+// ---------------- MQTT ----------------
 void connectMqtt() {
   while (!mqttClient.connected()) {
     Serial.print("Connecting to MQTT...");
 
-    String clientId = String("esp32-locker-") + lockerCode;
-
-    if (mqttClient.connect(clientId.c_str(), mqttUser, mqttPassword)) {
+    if (mqttClient.connect("esp32-multi-locker", mqttUser, mqttPassword)) {
       Serial.println("connected");
-      mqttClient.subscribe(lockerControlTopic);
-      applyLockerState(true);  // Default state on connect: locked
+
+      for (int i = 0; i < lockerCount; i++) {
+        mqttClient.subscribe(lockerControlTopics[i]);
+        mqttClient.subscribe(legacyControlTopics[i]);
+
+        Serial.printf("Subscribed: %s\n", lockerControlTopics[i]);
+
+        applyLockerState(i, true); // default LOCKED
+      }
+
     } else {
       Serial.print("failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" retrying in 3s");
+      Serial.println(mqttClient.state());
       delay(3000);
     }
   }
 }
 
+// ---------------- SETUP ----------------
 void setup() {
   Serial.begin(115200);
 
+  for (int i = 0; i < lockerCount; i++) {
+
+    // Topics
+    snprintf(lockerControlTopics[i], sizeof(lockerControlTopics[i]),
+             "locker/%s/control", lockerCodes[i]);
+
+    snprintf(lockerStateTopics[i], sizeof(lockerStateTopics[i]),
+             "locker/%s/state", lockerCodes[i]);
+
+    // Legacy topic (locker/1/control)
+    const char* codePart = lockerCodes[i];
+    if (lockerCodes[i][0] == 'L') {
+      codePart = lockerCodes[i] + 1;
+    }
+
+    snprintf(legacyControlTopics[i], sizeof(legacyControlTopics[i]),
+             "locker/%s/control", codePart);
+
+    Serial.printf("Locker: %s\n", lockerCodes[i]);
+    Serial.printf("Topic: %s\n", lockerControlTopics[i]);
+  }
+
+  // Pin setup
   pinMode(relayPin, OUTPUT);
   pinMode(ledBuiltin, OUTPUT);
   pinMode(doorSensorPin, INPUT_PULLUP);
-  applyLockerState(true);
+
+  for (int i = 1; i < lockerCount; i++) {
+    pinMode(ledPins[i], OUTPUT);
+  }
 
   connectWifi();
 
-  // For quick setup with HiveMQ Cloud TLS. For production, use proper CA certs.
   wifiClient.setInsecure();
   mqttClient.setServer(mqttServer, mqttPort);
   mqttClient.setCallback(mqttCallback);
 }
 
+// ---------------- LOOP ----------------
 void loop() {
+
   if (WiFi.status() != WL_CONNECTED) {
     connectWifi();
   }
@@ -127,5 +197,4 @@ void loop() {
 
   mqttClient.loop();
   publishDoorState();
-  delay(50);
 }
