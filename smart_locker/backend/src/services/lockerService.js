@@ -14,7 +14,7 @@ async function listLockers(user, stationId) {
   const filter = {};
 
   if (stationId) {
-    if (!canAccessStation(user, stationId)) {
+    if (user.role !== 'USER' && !canAccessStation(user, stationId)) {
       const error = new Error('Station access denied');
       error.statusCode = 403;
       throw error;
