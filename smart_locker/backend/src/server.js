@@ -2,11 +2,13 @@ const { createApp } = require('./app');
 const { env } = require('./config/env');
 const { connectDatabase } = require('./config/database');
 const { seedSampleData } = require('./services/seedService');
+const { subscribeAllLockers } = require('./services/mqttService');
 const { startScheduler } = require('./services/scheduleService');
 
 async function startServer() {
   await connectDatabase();
   await seedSampleData();
+  await subscribeAllLockers();
   startScheduler();
 
   const app = createApp();

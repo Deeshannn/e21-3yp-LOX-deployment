@@ -21,10 +21,12 @@ const int relayPin = 23;   // L1 real lock
 const int ledPins[lockerCount] = {23, 18, 19, 21}; // L2–L4 LEDs (L1 uses relay)
 const int ledBuiltin = 2;
 const int doorSensorPin = 4;
+const int doorIndicatorPin = 16; // External LED for L1 door open/close status
 
 // MQTT topics
 char lockerControlTopics[lockerCount][64];
 char lockerStateTopics[lockerCount][64];
+char lockerDoorTopics[lockerCount][64];
 char legacyControlTopics[lockerCount][64];
 
 WiFiClientSecure wifiClient;
@@ -68,8 +70,15 @@ void applyLockerState(int i, bool locked) {
 void publishDoorState() {
   String currentDoorState = digitalRead(doorSensorPin) == HIGH ? "OPEN" : "CLOSED";
 
+  if (currentDoorState == "OPEN") {
+    digitalWrite(doorIndicatorPin, HIGH);
+  } else {
+    digitalWrite(doorIndicatorPin, LOW);
+  }
+
   if (currentDoorState != lastDoorState) {
-    mqttClient.publish(lockerStateTopics[0], currentDoorState.c_str(), true);
+    Serial.printf("Door sensor: %s -> publishing %s to %s\n", currentDoorState.c_str(), currentDoorState.c_str(), lockerDoorTopics[0]);
+    mqttClient.publish(lockerDoorTopics[0], currentDoorState.c_str(), true);
     lastDoorState = currentDoorState;
   }
 }
@@ -130,6 +139,8 @@ void connectMqtt() {
         mqttClient.subscribe(legacyControlTopics[i]);
 
         Serial.printf("Subscribed: %s\n", lockerControlTopics[i]);
+        Serial.printf("Subscribed (legacy): %s\n", legacyControlTopics[i]);
+        Serial.printf("Door topic: %s\n", lockerDoorTopics[i]);
 
         applyLockerState(i, true); // default LOCKED
       }
@@ -155,6 +166,9 @@ void setup() {
     snprintf(lockerStateTopics[i], sizeof(lockerStateTopics[i]),
              "locker/%s/state", lockerCodes[i]);
 
+    snprintf(lockerDoorTopics[i], sizeof(lockerDoorTopics[i]),
+         "locker/%s/door", lockerCodes[i]);
+
     // Legacy topic (locker/1/control)
     const char* codePart = lockerCodes[i];
     if (lockerCodes[i][0] == 'L') {
@@ -172,6 +186,8 @@ void setup() {
   pinMode(relayPin, OUTPUT);
   pinMode(ledBuiltin, OUTPUT);
   pinMode(doorSensorPin, INPUT_PULLUP);
+  pinMode(doorIndicatorPin, OUTPUT);
+  digitalWrite(doorIndicatorPin, LOW);
 
   for (int i = 1; i < lockerCount; i++) {
     pinMode(ledPins[i], OUTPUT);

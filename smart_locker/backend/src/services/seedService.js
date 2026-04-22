@@ -43,8 +43,12 @@ async function upsertUser({ name, email, password, role, stationIds }) {
       stationId: station._id,
       code: 'L1',
       controlTopic: env.defaultControlTopic,
-      stateTopic: env.defaultStateTopic
+      stateTopic: env.defaultStateTopic,
+      doorTopic: env.defaultDoorTopic
     });
+  } else if (!locker.doorTopic) {
+    locker.doorTopic = env.defaultDoorTopic;
+    await locker.save();
   }
 
   await subscribeLockerState(locker);

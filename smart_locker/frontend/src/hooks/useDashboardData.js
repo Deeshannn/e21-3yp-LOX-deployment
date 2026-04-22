@@ -49,6 +49,18 @@ export function useDashboardData(token, user) {
     setQueueEntries(queueData.queueEntries || []);
   }, [headers, selectedStationId, token, user]);
 
+  React.useEffect(() => {
+    if (!token || !user) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      load().catch(() => {});
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [token, user, load]);
+
   return {
     stations,
     selectedStationId,

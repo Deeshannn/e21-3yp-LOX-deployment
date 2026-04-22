@@ -7,6 +7,7 @@ const lockerSchema = new mongoose.Schema(
     code: { type: String, required: true, unique: true, uppercase: true, trim: true },
     controlTopic: { type: String, required: true },
     stateTopic: { type: String, required: true },
+    doorTopic: { type: String, default: '' },
     lockState: { type: String, enum: Object.values(LockerStates), default: LockerStates.UNKNOWN },
     doorState: { type: String, enum: Object.values(DoorStates), default: DoorStates.UNKNOWN },
     isBooked: { type: Boolean, default: false },

@@ -38,6 +38,7 @@ const env = {
   mqttPassword: getNonPlaceholder(process.env.MQTT_PASSWORD, ''),
   defaultControlTopic: process.env.MQTT_LOCKER_CONTROL_TOPIC || 'locker/1/control',
   defaultStateTopic: process.env.MQTT_LOCKER_STATE_TOPIC || 'locker/1/state',
+  defaultDoorTopic: process.env.MQTT_LOCKER_DOOR_TOPIC || 'locker/1/door',
   seedSampleData: process.env.SEED_SAMPLE_DATA !== 'false',
   sampleUsers: {
     superAdmin: {

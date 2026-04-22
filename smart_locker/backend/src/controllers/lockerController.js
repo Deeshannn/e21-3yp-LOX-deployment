@@ -10,12 +10,12 @@ const listLockersHandler = asyncHandler(async (req, res) => {
 });
 
 const createLockerHandler = asyncHandler(async (req, res) => {
-  const { stationId, code, controlTopic, stateTopic } = req.body;
+  const { stationId, code, controlTopic, stateTopic, doorTopic } = req.body;
   if (!stationId || !code) {
     return res.status(400).json({ message: 'stationId and code are required' });
   }
 
-  const locker = await createLocker(req.user, { stationId, code, controlTopic, stateTopic });
+  const locker = await createLocker(req.user, { stationId, code, controlTopic, stateTopic, doorTopic });
   return success(res, { locker }, 201);
 });
 

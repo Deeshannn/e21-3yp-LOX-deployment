@@ -46,11 +46,14 @@ async function createLocker(user, payload) {
     throw error;
   }
 
+  const code = payload.code.toUpperCase();
+
   const locker = await Locker.create({
     stationId: payload.stationId,
-    code: payload.code.toUpperCase(),
-    controlTopic: payload.controlTopic || `locker/${payload.code}/control`,
-    stateTopic: payload.stateTopic || `locker/${payload.code}/state`
+    code,
+    controlTopic: payload.controlTopic || `locker/${code}/control`,
+    stateTopic: payload.stateTopic || `locker/${code}/state`,
+    doorTopic: payload.doorTopic || `locker/${code}/door`
   });
 
   await subscribeLockerState(locker);
