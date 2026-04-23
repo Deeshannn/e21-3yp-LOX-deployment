@@ -13,13 +13,24 @@ function LockerPanel({
 }) {
   const currentUserId = user.id || user._id;
 
+  const isLockerOwnedByCurrentUser = (locker) => {
+    const lockerUserId = locker.currentUserId?._id || locker.currentUserId || '';
+    return String(lockerUserId) === String(currentUserId);
+  };
+
+  const activeUserLocker =
+    user.role === 'USER'
+      ? lockers.find((locker) => locker.isBooked && isLockerOwnedByCurrentUser(locker)) || null
+      : null;
+
+  const visibleLockers = activeUserLocker ? [activeUserLocker] : lockers;
+
   const canControlLocker = (locker) => {
     if (user.role !== 'USER') {
       return true;
     }
 
-    const lockerUserId = locker.currentUserId?._id || locker.currentUserId || '';
-    return String(lockerUserId) === String(currentUserId);
+    return isLockerOwnedByCurrentUser(locker);
   };
 
   return (
@@ -37,10 +48,10 @@ function LockerPanel({
         </select>
       </div>
 
-      <LockerGrid lockers={lockers} />
+      {!activeUserLocker ? <LockerGrid lockers={lockers} /> : null}
 
       <div className="cards">
-        {lockers.map((locker) => (
+        {visibleLockers.map((locker) => (
           <article className="mini-card" key={locker._id}>
             <h3>{locker.code}</h3>
             <p>Lock: {locker.lockState}</p>
