@@ -18,12 +18,13 @@ function LockerPanel({
     return String(lockerUserId) === String(currentUserId);
   };
 
-  const activeUserLocker =
+  const activeUserLockers =
     user.role === 'USER'
-      ? lockers.find((locker) => locker.isBooked && isLockerOwnedByCurrentUser(locker)) || null
-      : null;
+      ? lockers.filter((locker) => locker.isBooked && isLockerOwnedByCurrentUser(locker))
+      : [];
 
-  const visibleLockers = activeUserLocker ? [activeUserLocker] : lockers;
+  const hasActiveUserLockers = activeUserLockers.length > 0;
+  const visibleLockers = hasActiveUserLockers ? activeUserLockers : lockers;
 
   const canControlLocker = (locker) => {
     if (user.role !== 'USER') {
@@ -48,7 +49,7 @@ function LockerPanel({
         </select>
       </div>
 
-      {!activeUserLocker ? <LockerGrid lockers={lockers} /> : null}
+      {!hasActiveUserLockers ? <LockerGrid lockers={lockers} /> : null}
 
       <div className="cards">
         {visibleLockers.map((locker) => (
