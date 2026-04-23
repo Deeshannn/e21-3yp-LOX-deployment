@@ -1,7 +1,7 @@
 import React from 'react';
 
-const GRID_ROWS = 16;
-const GRID_COLS = 16;
+const GRID_ROWS = 4;
+const GRID_COLS = 4;
 const TOTAL_SLOTS = GRID_ROWS * GRID_COLS;
 
 function getLockerSlotStatus(locker) {
