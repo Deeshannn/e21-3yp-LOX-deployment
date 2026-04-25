@@ -134,7 +134,7 @@ class ApiClient {
   }
 
   Future<List<Station>> fetchStations() async {
-    final payload = await _request('GET', '/stations');
+    final payload = await _request('GET', '/stations/all');
     final data = payload['stations'] as List<dynamic>? ?? const [];
     return data
         .map((item) => Station.fromJson(item as Map<String, dynamic>))
