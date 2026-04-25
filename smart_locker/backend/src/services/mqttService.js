@@ -77,11 +77,52 @@ async function subscribeAllLockers() {
       await locker.save();
     }
     await subscribeLockerState(locker);
+    await publishLockerBookingStatus(locker);
   }
 }
 
 function buildDefaultTopic(locker, suffix) {
   return `locker/${locker.code}/${suffix}`;
+}
+
+function getLegacyCode(code = '') {
+  return code && code[0].toUpperCase() === 'L' ? code.slice(1) : code;
+}
+
+function publishRetained(topic, value) {
+  return new Promise((resolve, reject) => {
+    if (!client || !client.connected) {
+      reject(new Error('MQTT broker not connected'));
+      return;
+    }
+
+    client.publish(topic, value, { retain: true }, (err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function publishLockerBookingStatus(locker) {
+  if (!locker || !locker.code) {
+    return;
+  }
+
+  const value = locker.isBooked ? 'BOOKED' : 'FREE';
+  const canonicalTopic = buildDefaultTopic(locker, 'booking');
+  const legacyTopic = `locker/${getLegacyCode(locker.code)}/booking`;
+
+  const topics = new Set([canonicalTopic, legacyTopic]);
+  for (const topic of topics) {
+    try {
+      await publishRetained(topic, value);
+    } catch (error) {
+      console.error(`Failed to publish booking status to ${topic}:`, error.message);
+    }
+  }
 }
 
 function publishLockerCommand(locker, command) {
@@ -188,6 +229,7 @@ if (client) {
 module.exports = {
   mqttClient: client,
   publishLockerCommand,
+  publishLockerBookingStatus,
   subscribeLockerState,
   subscribeAllLockers,
   logEvent

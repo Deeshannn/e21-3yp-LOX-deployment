@@ -3,6 +3,7 @@ const { success } = require('../presenters/apiPresenter');
 const { listLockers, createLocker, commandLocker } = require('../services/lockerService');
 const Locker = require('../models/Locker');
 const { assignWaitingQueue } = require('../services/requestService');
+const { publishLockerBookingStatus } = require('../services/mqttService');
 
 const listLockersHandler = asyncHandler(async (req, res) => {
   const data = await listLockers(req.user, req.query.stationId);
@@ -43,6 +44,7 @@ const releaseLockerHandler = asyncHandler(async (req, res) => {
   locker.currentUserId = null;
   locker.activeRequestId = null;
   await locker.save();
+  await publishLockerBookingStatus(locker);
 
   await assignWaitingQueue(locker.stationId);
   return success(res, { message: 'Locker released' });
