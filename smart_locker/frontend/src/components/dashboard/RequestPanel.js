@@ -1,62 +1,15 @@
 import React from 'react';
 
-function RequestPanel({
-  user,
-  stations,
-  requests,
-  requestForm,
-  onRequestFormChange,
-  onCreateRequest,
-  onApprove,
-  onReject,
-  onCancel
-}) {
+function RequestPanel({ user, requests, onApprove, onReject }) {
   if (user.role === 'USER') {
-    const activeRequest = requests.find((item) => item.status === 'PENDING' || item.status === 'QUEUED');
-
     return (
       <section className="panel">
-        <h2>Request Locker Access</h2>
-
-        {activeRequest ? (
-          <article className="mini-card">
-            <h3>Current Request</h3>
-            <p>Status: {activeRequest.status}</p>
-            <p>Station: {activeRequest.stationId?.code || '-'}</p>
-            <p>Note: {activeRequest.note || '-'}</p>
-            <div className="actions">
-              <button className="danger" type="button" onClick={() => onCancel(activeRequest._id)}>
-                Cancel Request
-              </button>
-            </div>
-          </article>
-        ) : null}
-
-        <form onSubmit={onCreateRequest} className="grid-form inline">
-          <select
-            value={requestForm.stationId}
-            onChange={(e) => onRequestFormChange('stationId', e.target.value)}
-            required
-            disabled={Boolean(activeRequest)}
-          >
-            <option value="">Select Station</option>
-            {stations.map((station) => (
-              <option key={station._id} value={station._id}>
-                {station.name} ({station.code})
-              </option>
-            ))}
-          </select>
-          <input
-            placeholder="Note"
-            value={requestForm.note}
-            onChange={(e) => onRequestFormChange('note', e.target.value)}
-            disabled={Boolean(activeRequest)}
-          />
-          <button type="submit" disabled={Boolean(activeRequest)}>
-            {activeRequest ? 'Request Pending' : 'Submit Request'}
-          </button>
-        </form>
-        {activeRequest ? <p className="muted-text">Your request is pending. You can cancel it if needed.</p> : null}
+        <h2>Direct Locker Access</h2>
+        <article className="mini-card">
+          <p>You do not need to send an approval request anymore.</p>
+          <p>Select a station in Locker Monitoring and click any available green locker slot.</p>
+          <p>The selected locker will be assigned to you and unlocked immediately.</p>
+        </article>
       </section>
     );
   }

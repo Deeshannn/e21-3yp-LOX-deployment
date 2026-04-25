@@ -85,8 +85,92 @@ async function commandLocker(user, lockerId, command) {
   return locker;
 }
 
+async function claimLockerAndUnlock(user, lockerId) {
+  const locker = await Locker.findById(lockerId);
+  if (!locker) {
+    const error = new Error('Locker not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!canAccessStation(user, locker.stationId)) {
+    const error = new Error('Station access denied');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const lockerUserId = String(locker.currentUserId || '');
+  const isOwnedByUser = lockerUserId === String(user._id);
+
+  if (locker.isBooked && !isOwnedByUser) {
+    const error = new Error('Locker is already booked');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const userExistingLocker = await Locker.findOne({
+    currentUserId: user._id,
+    isBooked: true,
+    _id: { $ne: locker._id }
+  });
+
+  if (userExistingLocker) {
+    const error = new Error('Release your current locker before claiming another one');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let assignedLocker = locker;
+  let claimedNow = false;
+  if (!locker.isBooked) {
+    assignedLocker = await Locker.findOneAndUpdate(
+      { _id: locker._id, isBooked: false },
+      {
+        $set: {
+          isBooked: true,
+          currentUserId: user._id,
+          activeRequestId: null
+        }
+      },
+      { new: true }
+    );
+
+    if (!assignedLocker) {
+      const error = new Error('Locker was just booked by another user. Please choose another locker.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    claimedNow = true;
+  }
+
+  try {
+    await publishLockerCommand(assignedLocker, 'UNLOCK');
+    assignedLocker.lockState = LockerStates.UNLOCKED;
+    await assignedLocker.save();
+
+    await logEvent(assignedLocker, 'DIRECT_CLAIM', 'Locker claimed and unlocked directly by user', {
+      byUserId: user._id
+    });
+  } catch (error) {
+    if (claimedNow) {
+      await Locker.findByIdAndUpdate(assignedLocker._id, {
+        $set: {
+          isBooked: false,
+          currentUserId: null,
+          activeRequestId: null
+        }
+      });
+    }
+    throw error;
+  }
+
+  return assignedLocker;
+}
+
 module.exports = {
   listLockers,
   createLocker,
-  commandLocker
+  commandLocker,
+  claimLockerAndUnlock
 };

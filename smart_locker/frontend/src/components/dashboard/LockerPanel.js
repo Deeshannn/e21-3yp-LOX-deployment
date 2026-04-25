@@ -7,6 +7,7 @@ function LockerPanel({
   selectedStationId,
   onStationChange,
   lockers,
+  onClaimLocker,
   onUnlock,
   onLock,
   onRelease
@@ -37,7 +38,11 @@ function LockerPanel({
         </select>
       </div>
 
-      <LockerGrid lockers={lockers} />
+      {user.role === 'USER' ? (
+        <p className="muted-text">Click any available green slot to claim and unlock it instantly.</p>
+      ) : null}
+
+      <LockerGrid user={user} lockers={lockers} onClaimLocker={onClaimLocker} />
 
       <div className="cards">
         {lockers.map((locker) => (

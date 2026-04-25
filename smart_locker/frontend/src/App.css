@@ -128,6 +128,10 @@ body {
   background: #22c55e;
 }
 
+.legend-dot.mine {
+  background: #2563eb;
+}
+
 .legend-dot.occupied {
   background: #ef4444;
 }
@@ -158,13 +162,16 @@ body {
 .locker-slot-available {
   background: #22c55e;
   color: #ffffff;
-  cursor: pointer;
+}
+
+.locker-slot-mine {
+  background: #2563eb;
+  color: #ffffff;
 }
 
 .locker-slot-occupied {
   background: #ef4444;
   color: #ffffff;
-  cursor: pointer;
 }
 
 .locker-slot-empty {
@@ -174,10 +181,18 @@ body {
   pointer-events: none;
 }
 
-.locker-slot-available:hover,
-.locker-slot-occupied:hover {
+.locker-slot-clickable {
+  cursor: pointer;
+}
+
+.locker-slot-clickable:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 12px rgba(15, 23, 42, 0.14);
+}
+
+.locker-slot-clickable:focus-visible {
+  outline: 2px solid #0f172a;
+  outline-offset: 1px;
 }
 
 .muted-text {

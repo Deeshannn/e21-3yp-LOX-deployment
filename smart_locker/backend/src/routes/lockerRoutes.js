@@ -4,6 +4,7 @@ const {
   createLockerHandler,
   unlockLockerHandler,
   lockLockerHandler,
+  claimLockerHandler,
   releaseLockerHandler
 } = require('../controllers/lockerController');
 const { requireAuth, allowRoles } = require('../middleware/authMiddleware');
@@ -16,6 +17,7 @@ router.get('/', listLockersHandler);
 router.post('/', allowRoles([Roles.SUPER_ADMIN, Roles.SUB_ADMIN]), createLockerHandler);
 router.post('/:lockerId/unlock', unlockLockerHandler);
 router.post('/:lockerId/lock', lockLockerHandler);
+router.post('/:lockerId/claim', allowRoles([Roles.USER]), claimLockerHandler);
 router.post('/:lockerId/release', releaseLockerHandler);
 
 module.exports = router;

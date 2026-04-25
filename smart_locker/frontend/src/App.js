@@ -259,6 +259,8 @@ function App() {
     withRefresh(() => apiRequest(`/lockers/${lockerId}/unlock`, { method: 'POST', headers }));
   const onLock = (lockerId) =>
     withRefresh(() => apiRequest(`/lockers/${lockerId}/lock`, { method: 'POST', headers }));
+  const onClaimLocker = (lockerId) =>
+    withRefresh(() => apiRequest(`/lockers/${lockerId}/unlock`, { method: 'POST', headers }));
   const onRelease = (lockerId) =>
     withRefresh(() => apiRequest(`/lockers/${lockerId}/release`, { method: 'POST', headers }));
 
@@ -327,6 +329,7 @@ function App() {
       onApproveRequest={onApproveRequest}
       onRejectRequest={onRejectRequest}
       onCancelRequest={onCancelRequest}
+      onClaimLocker={onClaimLocker}
       onUnlock={onUnlock}
       onLock={onLock}
       onRelease={onRelease}

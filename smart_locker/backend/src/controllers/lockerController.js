@@ -1,6 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const { success } = require('../presenters/apiPresenter');
-const { listLockers, createLocker, commandLocker } = require('../services/lockerService');
+const { listLockers, createLocker, commandLocker, claimLockerAndUnlock } = require('../services/lockerService');
 const Locker = require('../models/Locker');
 const { assignWaitingQueue } = require('../services/requestService');
 
@@ -20,13 +20,21 @@ const createLockerHandler = asyncHandler(async (req, res) => {
 });
 
 const unlockLockerHandler = asyncHandler(async (req, res) => {
-  const locker = await commandLocker(req.user, req.params.lockerId, 'UNLOCK');
+  const locker =
+    req.user.role === 'USER'
+      ? await claimLockerAndUnlock(req.user, req.params.lockerId)
+      : await commandLocker(req.user, req.params.lockerId, 'UNLOCK');
   return success(res, { message: 'Unlock command sent', locker });
 });
 
 const lockLockerHandler = asyncHandler(async (req, res) => {
   const locker = await commandLocker(req.user, req.params.lockerId, 'LOCK');
   return success(res, { message: 'Lock command sent', locker });
+});
+
+const claimLockerHandler = asyncHandler(async (req, res) => {
+  const locker = await claimLockerAndUnlock(req.user, req.params.lockerId);
+  return success(res, { message: 'Locker claimed and unlocked', locker });
 });
 
 const releaseLockerHandler = asyncHandler(async (req, res) => {
@@ -53,5 +61,6 @@ module.exports = {
   createLockerHandler,
   unlockLockerHandler,
   lockLockerHandler,
+  claimLockerHandler,
   releaseLockerHandler
 };

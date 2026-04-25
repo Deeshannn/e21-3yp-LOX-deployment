@@ -39,6 +39,7 @@ function DashboardPage(props) {
     onApproveRequest,
     onRejectRequest,
     onCancelRequest,
+    onClaimLocker,
     onUnlock,
     onLock,
     onRelease
@@ -89,6 +90,7 @@ function DashboardPage(props) {
         selectedStationId={selectedStationId}
         onStationChange={onStationFilterChange}
         lockers={lockers}
+        onClaimLocker={onClaimLocker}
         onUnlock={onUnlock}
         onLock={onLock}
         onRelease={onRelease}
