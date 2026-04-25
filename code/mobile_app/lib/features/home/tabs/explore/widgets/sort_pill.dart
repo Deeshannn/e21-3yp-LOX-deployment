@@ -20,8 +20,6 @@ class SortPill extends StatelessWidget {
   /// Passes the newly selected [HomeStationSort] back to the parent.
   final ValueChanged<HomeStationSort> onChanged;
 
-  static const _muted = Color(0xFFA6A39B);
-  static const _text  = Color(0xFF1F1E1B);
 
   @override
   Widget build(BuildContext context) {
