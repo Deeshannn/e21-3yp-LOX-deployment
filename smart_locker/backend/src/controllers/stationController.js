@@ -1,20 +1,28 @@
 const asyncHandler = require('../utils/asyncHandler');
 const { success } = require('../presenters/apiPresenter');
-const { getStationsForUser, createStation } = require('../services/stationService');
+const { getStationsForUser, getAllStations, createStation } = require('../services/stationService');
 const { updateSchedule, commandAll } = require('../services/stationActionService');
+const { validateCreateStationPayload } = require('../validations/stationValidate');
 
 const listStations = asyncHandler(async (req, res) => {
   const stations = await getStationsForUser(req.user);
   return success(res, { stations });
 });
 
+// New endpoint to list all stations, regardless of user association
+const listAllStations = asyncHandler(async (_req, res) => {
+  const stations = await getAllStations();
+  return success(res, { stations });
+});
+
+// Updated to add location data in the payload
 const createStationHandler = asyncHandler(async (req, res) => {
-  const { name, code, timezone, openTime, closeTime } = req.body;
-  if (!name || !code) {
-    return res.status(400).json({ message: 'name and code are required' });
+  const { error, data } = validateCreateStationPayload(req.body);
+  if (error) {
+    return res.status(400).json({ message: error });
   }
 
-  const station = await createStation({ name, code, timezone, openTime, closeTime });
+  const station = await createStation(data);
   return success(res, { station }, 201);
 });
 
@@ -35,6 +43,7 @@ const lockAllHandler = asyncHandler(async (req, res) => {
 
 module.exports = {
   listStations,
+  listAllStations,
   createStationHandler,
   updateScheduleHandler,
   emergencyUnlockHandler,
