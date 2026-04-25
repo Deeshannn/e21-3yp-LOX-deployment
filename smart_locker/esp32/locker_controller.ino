@@ -90,15 +90,15 @@ void updateDisplay() {
 // ---------------- APPLY STATE ----------------
 void applyLockerState(int i, bool locked) {
 
-  // 🔹 L1 → RELAY (keep EXACT behavior)
+  // 🔹 L1 → RELAY (same logic as L2-L4)
   if (i == 0) {
     if (locked) {
-      digitalWrite(relayPin, HIGH); // OFF
+      digitalWrite(relayPin, LOW);   // OFF
       digitalWrite(ledBuiltin, LOW);
       lockerStateDisplay = "LOCKED";
       lockerActionDisplay = "";
     } else {
-      digitalWrite(relayPin, LOW);  // ON
+      digitalWrite(relayPin, HIGH);  // ON
       digitalWrite(ledBuiltin, HIGH);
       lockerStateDisplay = "UNLOCKED";
       lockerActionDisplay = "";
