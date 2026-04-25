@@ -1,16 +1,20 @@
 require("dotenv").config()
 const express = require("express")
-const connectMasterDB = require("./config/masterDB")
+const cors    = require("cors")
+const connectMasterDB    = require("./config/masterDB")
 const { initStationDBs } = require("./config/stationDB")
 
 const app = express()
+
+// Enable CORS for all origins
+app.use(cors())
 app.use(express.json())
 
 // Connect databases
 connectMasterDB()
 initStationDBs()
 
-// Initialize MQTT service — connects to broker and starts listening to ESP32
+// Initialize MQTT — connects to broker and listens to ESP32
 require("./services/mqttService")
 
 // Routes
@@ -18,6 +22,7 @@ app.use("/api/users",       require("./routes/users"))
 app.use("/api/stations",    require("./routes/stations"))
 app.use("/api/memberships", require("./routes/memberships"))
 app.use("/api/lockers",     require("./routes/lockers"))
+app.use("/api/queue",       require("./routes/queue"))
 
 // Health check — shows DB and MQTT connection status
 app.get("/health", (req, res) => {

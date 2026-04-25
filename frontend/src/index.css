@@ -1,0 +1,247 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* SmartLocker design system — blue→purple, electric thunder vibes.
+   All colors HSL. Tokens only — never hardcode in components. */
+
+@layer base {
+  :root {
+    --background: 240 60% 4%;
+    --foreground: 230 40% 96%;
+
+    --card: 240 50% 7%;
+    --card-foreground: 230 40% 96%;
+
+    --popover: 240 55% 6%;
+    --popover-foreground: 230 40% 96%;
+
+    --primary: 230 95% 65%;          /* electric blue */
+    --primary-foreground: 240 60% 6%;
+
+    --secondary: 265 85% 62%;        /* violet */
+    --secondary-foreground: 230 40% 98%;
+
+    --muted: 240 30% 14%;
+    --muted-foreground: 230 20% 70%;
+
+    --accent: 195 100% 60%;          /* cyan zap */
+    --accent-foreground: 240 60% 6%;
+
+    --destructive: 350 90% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 40% 18%;
+    --input: 240 40% 14%;
+    --ring: 230 95% 65%;
+
+    --radius: 0.85rem;
+
+    /* Brand-specific tokens */
+    --brand-blue: 225 95% 60%;
+    --brand-indigo: 245 90% 60%;
+    --brand-violet: 270 90% 65%;
+    --brand-purple: 285 85% 65%;
+    --brand-cyan: 190 100% 60%;
+
+    --gradient-brand: linear-gradient(135deg, hsl(var(--brand-blue)) 0%, hsl(var(--brand-violet)) 55%, hsl(var(--brand-purple)) 100%);
+    --gradient-brand-soft: linear-gradient(135deg, hsl(var(--brand-blue) / 0.18), hsl(var(--brand-violet) / 0.18));
+    --gradient-bolt: linear-gradient(180deg, hsl(var(--brand-cyan)) 0%, hsl(var(--brand-blue)) 50%, hsl(var(--brand-violet)) 100%);
+
+    --shadow-glow: 0 0 40px -8px hsl(var(--brand-violet) / 0.55);
+    --shadow-glow-blue: 0 0 35px -10px hsl(var(--brand-blue) / 0.7);
+    --shadow-cube: 0 18px 35px -18px hsl(var(--brand-violet) / 0.55), inset 0 1px 0 hsl(0 0% 100% / 0.08);
+
+    --transition-spring: cubic-bezier(0.22, 1, 0.36, 1);
+
+    --sidebar-background: 240 55% 6%;
+    --sidebar-foreground: 230 40% 96%;
+    --sidebar-primary: 230 95% 65%;
+    --sidebar-primary-foreground: 240 60% 6%;
+    --sidebar-accent: 240 40% 14%;
+    --sidebar-accent-foreground: 230 40% 96%;
+    --sidebar-border: 240 40% 18%;
+    --sidebar-ring: 230 95% 65%;
+  }
+
+  /* Single-theme app — keep dark mapped to root */
+  .dark { color-scheme: dark; }
+}
+
+@layer base {
+  * { @apply border-border; }
+
+  html, body, #root { height: 100%; }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    background-color: hsl(var(--background));
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* ---------- Thunder / Aurora background ---------- */
+@layer components {
+  .thunder-bg {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    background:
+      radial-gradient(1200px 800px at 15% 10%, hsl(var(--brand-blue) / 0.25), transparent 60%),
+      radial-gradient(1000px 700px at 85% 20%, hsl(var(--brand-violet) / 0.28), transparent 60%),
+      radial-gradient(900px 700px at 50% 100%, hsl(var(--brand-purple) / 0.22), transparent 60%),
+      hsl(var(--background));
+  }
+
+  .thunder-bg::before,
+  .thunder-bg::after {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    background:
+      conic-gradient(from 90deg at 30% 30%, hsl(var(--brand-blue) / 0.35), transparent 30%, hsl(var(--brand-violet) / 0.3) 60%, transparent 90%);
+    filter: blur(80px);
+    opacity: 0.55;
+    animation: aurora-drift 22s linear infinite;
+  }
+  .thunder-bg::after {
+    background:
+      conic-gradient(from 200deg at 70% 60%, hsl(var(--brand-purple) / 0.35), transparent 35%, hsl(var(--brand-cyan) / 0.25) 70%, transparent 95%);
+    animation-duration: 30s;
+    animation-direction: reverse;
+    opacity: 0.5;
+  }
+
+  /* Lightning bolts */
+  .thunder-bolts {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .thunder-bolts span {
+    position: absolute;
+    top: -10%;
+    width: 2px;
+    height: 110vh;
+    background: linear-gradient(180deg, transparent, hsl(var(--brand-cyan) / 0.9), hsl(var(--brand-blue) / 0.9), transparent);
+    filter: drop-shadow(0 0 8px hsl(var(--brand-cyan) / 0.9)) drop-shadow(0 0 20px hsl(var(--brand-blue) / 0.6));
+    opacity: 0;
+    transform: translateY(-100%) skewX(-12deg);
+    animation: bolt-strike 7s linear infinite;
+  }
+  .thunder-bolts span:nth-child(1) { left: 12%;  animation-delay: 0s;   }
+  .thunder-bolts span:nth-child(2) { left: 38%;  animation-delay: 2.4s; height: 80vh; }
+  .thunder-bolts span:nth-child(3) { left: 64%;  animation-delay: 4.1s; }
+  .thunder-bolts span:nth-child(4) { left: 82%;  animation-delay: 5.6s; height: 70vh; }
+  .thunder-bolts span:nth-child(5) { left: 26%;  animation-delay: 6.3s; height: 60vh; }
+
+  /* Brand surfaces */
+  .glass-card {
+    background: linear-gradient(180deg, hsl(var(--card) / 0.85), hsl(var(--card) / 0.6));
+    backdrop-filter: blur(14px);
+    border: 1px solid hsl(var(--border) / 0.8);
+    box-shadow: var(--shadow-glow);
+  }
+
+  .text-gradient-brand {
+    background: var(--gradient-brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Isometric locker cube */
+  .iso-stage {
+    perspective: 1200px;
+    perspective-origin: 50% 30%;
+  }
+  .iso-cube {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    transform-style: preserve-3d;
+    transform: rotateX(28deg) rotateZ(-32deg);
+    transition: transform 500ms var(--transition-spring), filter 300ms ease;
+  }
+  .iso-cube:hover { transform: rotateX(22deg) rotateZ(-32deg) translateY(-6px) scale(1.04); }
+  .iso-cube .face {
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-cube);
+  }
+  .iso-cube .face.top {
+    background: linear-gradient(135deg, hsl(var(--brand-blue) / 0.85), hsl(var(--brand-violet) / 0.85));
+    transform: translateZ(28px);
+  }
+  .iso-cube .face.left {
+    background: linear-gradient(180deg, hsl(var(--brand-indigo) / 0.7), hsl(var(--brand-purple) / 0.55));
+    transform: rotateY(-90deg) translateZ(0) translateX(-50%);
+    transform-origin: left center;
+    width: 56px;
+    left: 0;
+  }
+  .iso-cube .face.right {
+    background: linear-gradient(180deg, hsl(var(--brand-violet) / 0.7), hsl(var(--brand-purple) / 0.55));
+    transform: rotateY(90deg) translateZ(0) translateX(50%);
+    transform-origin: right center;
+    width: 56px;
+    right: 0;
+  }
+
+  .iso-state-available  .face.top { background: linear-gradient(135deg, hsl(190 100% 55%), hsl(230 95% 60%)); box-shadow: 0 0 30px hsl(var(--brand-cyan) / 0.4) inset, 0 18px 35px -18px hsl(var(--brand-cyan) / 0.6); }
+  .iso-state-reserved   .face.top { background: linear-gradient(135deg, hsl(285 85% 65%), hsl(265 85% 55%)); }
+  .iso-state-unavailable .face.top { background: linear-gradient(135deg, hsl(240 15% 30%), hsl(240 15% 18%)); }
+  .iso-state-mine       .face.top { background: linear-gradient(135deg, hsl(140 85% 55%), hsl(190 100% 60%)); box-shadow: 0 0 40px hsl(140 85% 55% / 0.6) inset; }
+
+  .pulse-dot {
+    width: 8px; height: 8px; border-radius: 9999px;
+    box-shadow: 0 0 0 0 currentColor;
+    animation: pulse-ring 1.8s ease-out infinite;
+  }
+}
+
+@layer utilities {
+  .glow-blue   { box-shadow: var(--shadow-glow-blue); }
+  .glow-violet { box-shadow: var(--shadow-glow); }
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes aurora-drift {
+  0%   { transform: rotate(0deg)   translate3d(0,0,0); }
+  100% { transform: rotate(360deg) translate3d(0,0,0); }
+}
+
+@keyframes bolt-strike {
+  0%, 92%, 100% { opacity: 0; transform: translateY(-100%) skewX(-12deg); }
+  93%           { opacity: 1; transform: translateY(0)     skewX(-12deg); }
+  94%           { opacity: 0.2; }
+  95%           { opacity: 1; }
+  96%           { opacity: 0; transform: translateY(20%)   skewX(-12deg); }
+}
+
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  80%  { box-shadow: 0 0 0 12px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}

@@ -3,6 +3,28 @@ const router = express.Router()
 const User = require("../models/master/User")
 const bcrypt = require("bcrypt")
 
+// GET /api/users
+// Get all users with id, name, email
+router.get("/", async (req, res) => {
+  try {
+    const users = await User.find().select("_id name email created_at")
+
+    res.status(200).json({
+      message: "Users retrieved successfully",
+      count:   users.length,
+      users:   users.map((u) => ({
+        user_id:    u._id,
+        name:       u.name,
+        email:      u.email,
+        created_at: u.created_at
+      }))
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
 // POST /api/users/add
 router.post("/add", async (req, res) => {
   try {

@@ -6,11 +6,46 @@ const LockerStation = require("../models/master/LockerStation")
 const { getStationDB } = require("../config/stationDB")
 const stationMemberSchema = require("../models/station/StationMember")
 
-// Helper — get or register StationMember model on a station connection
 const getStationMemberModel = (stationId) => {
   const conn = getStationDB(stationId)
   return conn.models.StationMember || conn.model("StationMember", stationMemberSchema)
 }
+
+
+// ─────────────────────────────────────────────────────────
+// GET /api/memberships/status/:station_id?user_id=
+// Returns membership status for a user at a station
+// Returns: none | pending | member
+// ─────────────────────────────────────────────────────────
+router.get("/status/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+    const { user_id }    = req.query
+
+    if (!user_id) {
+      return res.status(400).json({ message: "user_id is required" })
+    }
+
+    const membership = await Membership.findOne({ user_id, station_id })
+
+    if (!membership) {
+      return res.status(200).json({ status: "none" })
+    }
+
+    if (membership.status === "active") {
+      return res.status(200).json({ status: "member" })
+    }
+
+    if (membership.status === "pending") {
+      return res.status(200).json({ status: "pending" })
+    }
+
+    return res.status(200).json({ status: "none" })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
 
 
 // ─────────────────────────────────────────────────────────
@@ -25,13 +60,11 @@ router.post("/request", async (req, res) => {
       return res.status(400).json({ message: "user_id and station_id are required" })
     }
 
-    // Check user exists
     const user = await User.findById(user_id)
     if (!user) {
       return res.status(404).json({ message: "User not found" })
     }
 
-    // Check station exists and is active
     const station = await LockerStation.findOne({ station_id })
     if (!station) {
       return res.status(404).json({ message: "Station not found" })
@@ -40,13 +73,11 @@ router.post("/request", async (req, res) => {
       return res.status(400).json({ message: `Station is currently ${station.status}. Cannot request membership.` })
     }
 
-    // Check if membership already exists
     const existing = await Membership.findOne({ user_id, station_id })
     if (existing) {
       return res.status(400).json({ message: `Membership already exists with status: ${existing.status}` })
     }
 
-    // Create membership with pending status
     const membership = await Membership.create({
       user_id,
       station_id,
@@ -54,14 +85,9 @@ router.post("/request", async (req, res) => {
     })
 
     res.status(201).json({
-      message: "Membership requested successfully. Waiting for station approval.",
-      membership: {
-        membership_id: membership._id,
-        user_id:       membership.user_id,
-        station_id:    membership.station_id,
-        status:        membership.status,
-        joined_at:     membership.joined_at
-      }
+      message:       "Membership requested successfully. Waiting for station approval.",
+      membership_id: membership._id,
+      status:        membership.status
     })
 
   } catch (err) {
@@ -83,25 +109,21 @@ router.put("/accept", async (req, res) => {
       return res.status(400).json({ message: "membership_id is required" })
     }
 
-    // Find the membership in Master DB
     const membership = await Membership.findById(membership_id)
     if (!membership) {
       return res.status(404).json({ message: "Membership not found" })
     }
 
-    // Only pending memberships can be accepted
     if (membership.status !== "pending") {
       return res.status(400).json({ message: `Membership is already ${membership.status}` })
     }
 
-    // Update membership status to active in Master DB
     membership.status   = "active"
     membership.joined_at = new Date()
     await membership.save()
 
-    // Write user into the Station DB automatically
+    // Write user into Station DB
     const StationMember = getStationMemberModel(membership.station_id)
-
     const alreadyInStation = await StationMember.findOne({ user_id: membership.user_id })
     if (!alreadyInStation) {
       await StationMember.create({
@@ -113,7 +135,8 @@ router.put("/accept", async (req, res) => {
     }
 
     res.status(200).json({
-      message: "Membership accepted. User has been added to the station.",
+      ok:         true,
+      message:    "Membership accepted. User has been added to the station.",
       membership: {
         membership_id: membership._id,
         user_id:       membership.user_id,
@@ -122,6 +145,34 @@ router.put("/accept", async (req, res) => {
         joined_at:     membership.joined_at
       }
     })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// POST /api/memberships/ignore
+// Station ignores/rejects a pending membership request
+// ─────────────────────────────────────────────────────────
+router.post("/ignore", async (req, res) => {
+  try {
+    const { membership_id } = req.body
+
+    if (!membership_id) {
+      return res.status(400).json({ message: "membership_id is required" })
+    }
+
+    const membership = await Membership.findById(membership_id)
+    if (!membership) {
+      return res.status(404).json({ message: "Membership not found" })
+    }
+
+    // Delete the membership request entirely
+    await Membership.findByIdAndDelete(membership_id)
+
+    res.status(200).json({ ok: true, message: "Membership request ignored and removed" })
 
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message })

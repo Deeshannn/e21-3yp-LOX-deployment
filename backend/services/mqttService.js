@@ -1,29 +1,28 @@
 const mqtt = require("mqtt")
-const { getStationDB } = require("../config/stationDB")
-const lockerSchema = require("../models/station/Locker")
+const { getStationDB }          = require("../config/stationDB")
+const lockerSchema              = require("../models/station/Locker")
+const { processNextInQueue }    = require("../utils/queueProcessor")
 
 // ─────────────────────────────────────────────────────────
-// MQTT broker connection (HiveMQ Cloud)
+// MQTT broker connection
 // ─────────────────────────────────────────────────────────
 const client = mqtt.connect(`mqtts://${process.env.MQTT_SERVER}`, {
-  port:            8883,
-  username:        process.env.MQTT_USER,
-  password:        process.env.MQTT_PASSWORD,
-  reconnectPeriod: 5000,
-  rejectUnauthorized: false   // HiveMQ Cloud quick setup — use proper CA in production
+  port:               8883,
+  username:           process.env.MQTT_USER,
+  password:           process.env.MQTT_PASSWORD,
+  reconnectPeriod:    5000,
+  rejectUnauthorized: false
 })
 
 // ─────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────
 
-// Get Locker model for a specific station DB
 const getLockerModel = (stationId) => {
   const conn = getStationDB(stationId)
   return conn.models.Locker || conn.model("Locker", lockerSchema)
 }
 
-// Derive logical state from raw hardware signals
 const deriveState = (lockState, doorState) => {
   if (lockState === "locked"   && doorState === "closed") return "lock_close"
   if (lockState === "unlocked" && doorState === "closed") return "unlock_close"
@@ -32,7 +31,6 @@ const deriveState = (lockState, doorState) => {
   return "fault"
 }
 
-// Derive availability from logical state + reservation
 const deriveAvailability = (state, reserved_by) => {
   if (state === "offline")      return "unavailable"
   if (state === "unlock_close") return "unavailable"
@@ -41,16 +39,11 @@ const deriveAvailability = (state, reserved_by) => {
 }
 
 // Parse topic → { stationId, lockerId }
-// Expected format: locker/{station_id}/{locker_id}/state
+// Format: locker/{station_id}/{locker_id}/state
 const parseTopic = (topic) => {
   const parts = topic.split("/")
-  if (parts.length !== 4 || parts[0] !== "locker" || parts[3] !== "state") {
-    return null
-  }
-  return {
-    stationId: parts[1],
-    lockerId:  parts[2]
-  }
+  if (parts.length !== 4 || parts[0] !== "locker" || parts[3] !== "state") return null
+  return { stationId: parts[1], lockerId: parts[2] }
 }
 
 
@@ -60,9 +53,6 @@ const parseTopic = (topic) => {
 
 client.on("connect", () => {
   console.log("MQTT broker connected")
-
-  // Subscribe to all locker state topics across all stations
-  // Wildcard: locker/+/+/state catches all stations and lockers
   client.subscribe("locker/+/+/state", (err) => {
     if (err) {
       console.error("MQTT subscribe failed:", err.message)
@@ -76,12 +66,11 @@ client.on("connect", () => {
 client.on("message", async (topic, payload) => {
   try {
     const parsed = parseTopic(topic)
-    if (!parsed) return   // ignore unrecognized topics
+    if (!parsed) return
 
     const { stationId, lockerId } = parsed
     const value = payload.toString().trim().toUpperCase()
 
-    // Get the locker from the correct station DB
     const Locker = getLockerModel(stationId)
     const locker = await Locker.findOne({ locker_id: lockerId })
     if (!locker) {
@@ -89,33 +78,41 @@ client.on("message", async (topic, payload) => {
       return
     }
 
-    // Update hardware signal — lock state
-    if (value === "LOCKED") {
-      locker.lock_state = "locked"
-    } else if (value === "UNLOCKED") {
-      locker.lock_state = "unlocked"
-    }
-
-    // Update hardware signal — door state
-    else if (value === "OPEN") {
-      locker.door_state = "open"
-    } else if (value === "CLOSED") {
-      locker.door_state = "closed"
-    }
-
+    // Update hardware signals
+    if      (value === "LOCKED")   locker.lock_state = "locked"
+    else if (value === "UNLOCKED") locker.lock_state = "unlocked"
+    else if (value === "OPEN")     locker.door_state = "open"
+    else if (value === "CLOSED")   locker.door_state = "closed"
     else {
       console.warn(`MQTT: unknown payload "${value}" on topic ${topic}`)
       return
     }
 
-    // Derive and update logical state + availability
-    locker.state            = deriveState(locker.lock_state, locker.door_state)
-    locker.availability     = deriveAvailability(locker.state, locker.reserved_by)
-    locker.last_reported_at = new Date()
+    // Derive logical state and availability
+    const prevAvailability   = locker.availability
+    locker.state             = deriveState(locker.lock_state, locker.door_state)
+    locker.availability      = deriveAvailability(locker.state, locker.reserved_by)
+    locker.last_reported_at  = new Date()
 
     await locker.save()
 
     console.log(`MQTT: [${stationId}] ${lockerId} → lock:${locker.lock_state} door:${locker.door_state} state:${locker.state} availability:${locker.availability}`)
+
+    // ── QUEUE TRIGGER ──────────────────────────────────────
+    // If locker just became available, process queue
+    // This happens when: locked + closed + no reserved_by
+    const justBecameAvailable =
+      prevAvailability !== "available" &&
+      locker.availability === "available"
+
+    if (justBecameAvailable) {
+      console.log(`Queue trigger: locker ${lockerId} at ${stationId} is now available`)
+      const notified = await processNextInQueue(stationId, lockerId)
+      if (notified) {
+        console.log(`Queue: user ${notified.user_id} notified about locker ${lockerId}. Expires: ${notified.offer_expires_at}`)
+      }
+    }
+    // ───────────────────────────────────────────────────────
 
   } catch (err) {
     console.error("MQTT message processing error:", err.message)
@@ -123,23 +120,13 @@ client.on("message", async (topic, payload) => {
 })
 
 
-client.on("error", (err) => {
-  console.error("MQTT error:", err.message)
-})
-
-client.on("reconnect", () => {
-  console.log("MQTT reconnecting...")
-})
-
-client.on("offline", () => {
-  console.log("MQTT offline")
-})
+client.on("error",     (err) => console.error("MQTT error:", err.message))
+client.on("reconnect", ()    => console.log("MQTT reconnecting..."))
+client.on("offline",   ()    => console.log("MQTT offline"))
 
 
 // ─────────────────────────────────────────────────────────
 // PUBLISH COMMAND TO ESP32
-// Sends LOCK or UNLOCK to the locker's control topic
-// topic format: locker/{station_id}/{locker_id}/control
 // ─────────────────────────────────────────────────────────
 const publishCommand = (stationId, lockerId, command) => {
   return new Promise((resolve, reject) => {
@@ -148,7 +135,7 @@ const publishCommand = (stationId, lockerId, command) => {
     }
 
     const topic   = `locker/${stationId}/${lockerId}/control`
-    const payload = command.toUpperCase()   // LOCK or UNLOCK
+    const payload = command.toUpperCase()
 
     client.publish(topic, payload, (err) => {
       if (err) {
@@ -161,10 +148,6 @@ const publishCommand = (stationId, lockerId, command) => {
   })
 }
 
-
-// ─────────────────────────────────────────────────────────
-// HEALTH CHECK — is MQTT connected?
-// ─────────────────────────────────────────────────────────
 const isMqttConnected = () => client.connected
 
 module.exports = { publishCommand, isMqttConnected }
