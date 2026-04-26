@@ -41,7 +41,8 @@ function DashboardPage(props) {
     onCancelRequest,
     onUnlock,
     onLock,
-    onRelease
+    onRelease,
+    onIgnoreSecurity
   } = props;
 
   return (
@@ -92,6 +93,7 @@ function DashboardPage(props) {
         onUnlock={onUnlock}
         onLock={onLock}
         onRelease={onRelease}
+        onIgnoreSecurity={onIgnoreSecurity}
       />
 
       <QueuePanel queueEntries={queueEntries} />

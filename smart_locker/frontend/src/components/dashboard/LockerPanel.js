@@ -9,7 +9,8 @@ function LockerPanel({
   lockers,
   onUnlock,
   onLock,
-  onRelease
+  onRelease,
+  onIgnoreSecurity
 }) {
   const currentUserId = user.id || user._id;
 
@@ -32,6 +33,22 @@ function LockerPanel({
     }
 
     return isLockerOwnedByCurrentUser(locker);
+  };
+
+  const getLockerStationId = (locker) => {
+    if (!locker?.stationId) {
+      return '';
+    }
+    return String(locker.stationId?._id || locker.stationId);
+  };
+
+  const canIgnoreL1SecurityWarning = (locker) => {
+    if (user.role !== 'SUB_ADMIN') {
+      return false;
+    }
+
+    const allowedStationIds = (user.stationIds || []).map((id) => String(id));
+    return allowedStationIds.includes(getLockerStationId(locker));
   };
 
   return (
@@ -58,11 +75,19 @@ function LockerPanel({
             <p>Lock: {locker.lockState}</p>
             <p>Door: {locker.doorState}</p>
             <p>Booked: {locker.isBooked ? 'Yes' : 'No'}</p>
+            {locker.code === 'L1' && locker.lockState === 'LOCKED' && locker.doorState === 'OPEN' ? (
+              <p className="security-warning">Security issue: Door unexpectedly open while locked.</p>
+            ) : null}
             {canControlLocker(locker) ? (
               <div className="actions">
                 <button onClick={() => onUnlock(locker._id)}>Unlock</button>
                 <button onClick={() => onLock(locker._id)}>Lock</button>
                 <button onClick={() => onRelease(locker._id)}>Release</button>
+                {locker.code === 'L1' && locker.lockState === 'LOCKED' && locker.doorState === 'OPEN' && canIgnoreL1SecurityWarning(locker) ? (
+                  <button className="danger" onClick={() => onIgnoreSecurity(locker._id)}>
+                    Ignore Warning
+                  </button>
+                ) : null}
               </div>
             ) : (
               <p className="muted-text">View only</p>

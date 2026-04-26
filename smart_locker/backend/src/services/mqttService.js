@@ -125,6 +125,33 @@ async function publishLockerBookingStatus(locker) {
   }
 }
 
+async function publishLockerSecurityIgnoreCommand(locker) {
+  if (!locker || !locker.code) {
+    return;
+  }
+
+  const canonicalTopic = buildDefaultTopic(locker, 'security');
+  const legacyTopic = `locker/${getLegacyCode(locker.code)}/security`;
+  const topics = new Set([canonicalTopic, legacyTopic]);
+
+  for (const topic of topics) {
+    await new Promise((resolve, reject) => {
+      if (!client || !client.connected) {
+        reject(new Error('MQTT broker not connected'));
+        return;
+      }
+
+      client.publish(topic, 'IGNORE', (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+}
+
 function publishLockerCommand(locker, command) {
   return new Promise((resolve, reject) => {
     if (!client || !client.connected) {
@@ -230,6 +257,7 @@ module.exports = {
   mqttClient: client,
   publishLockerCommand,
   publishLockerBookingStatus,
+  publishLockerSecurityIgnoreCommand,
   subscribeLockerState,
   subscribeAllLockers,
   logEvent

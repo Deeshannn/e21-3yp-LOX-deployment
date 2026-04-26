@@ -261,6 +261,8 @@ function App() {
     withRefresh(() => apiRequest(`/lockers/${lockerId}/lock`, { method: 'POST', headers }));
   const onRelease = (lockerId) =>
     withRefresh(() => apiRequest(`/lockers/${lockerId}/release`, { method: 'POST', headers }));
+  const onIgnoreSecurity = (lockerId) =>
+    withRefresh(() => apiRequest(`/lockers/${lockerId}/security-ignore`, { method: 'POST', headers }));
 
   const onEmergencyUnlock = (stationId) =>
     withRefresh(() => apiRequest(`/stations/${stationId}/emergency-unlock`, { method: 'POST', headers }));
@@ -330,6 +332,7 @@ function App() {
       onUnlock={onUnlock}
       onLock={onLock}
       onRelease={onRelease}
+      onIgnoreSecurity={onIgnoreSecurity}
     />
   );
 }

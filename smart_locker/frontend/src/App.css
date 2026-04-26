@@ -185,6 +185,15 @@ body {
   font-size: 13px;
 }
 
+.security-warning {
+  color: var(--danger);
+  font-weight: 700;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  padding: 8px;
+}
+
 .mini-card {
   border: 1px solid var(--border);
   border-radius: 12px;

@@ -3,7 +3,16 @@ const { success } = require('../presenters/apiPresenter');
 const { listLockers, createLocker, commandLocker } = require('../services/lockerService');
 const Locker = require('../models/Locker');
 const { assignWaitingQueue } = require('../services/requestService');
-const { publishLockerBookingStatus } = require('../services/mqttService');
+const { publishLockerBookingStatus, publishLockerSecurityIgnoreCommand, logEvent } = require('../services/mqttService');
+const { Roles } = require('../constants/enums');
+
+function canAccessStation(user, stationId) {
+  if (user.role === Roles.SUPER_ADMIN) {
+    return true;
+  }
+
+  return (user.stationIds || []).map((id) => String(id)).includes(String(stationId));
+}
 
 const listLockersHandler = asyncHandler(async (req, res) => {
   const data = await listLockers(req.user, req.query.stationId);
@@ -50,10 +59,37 @@ const releaseLockerHandler = asyncHandler(async (req, res) => {
   return success(res, { message: 'Locker released' });
 });
 
+const ignoreSecurityAlertHandler = asyncHandler(async (req, res) => {
+  const locker = await Locker.findById(req.params.lockerId);
+  if (!locker) {
+    return res.status(404).json({ message: 'Locker not found' });
+  }
+
+  if (req.user.role !== Roles.SUB_ADMIN) {
+    return res.status(403).json({ message: 'Only station sub-admin can ignore this warning' });
+  }
+
+  if (!canAccessStation(req.user, locker.stationId)) {
+    return res.status(403).json({ message: 'Station access denied' });
+  }
+
+  if (locker.code !== 'L1') {
+    return res.status(400).json({ message: 'Security ignore is available for Locker L1 only' });
+  }
+
+  await publishLockerSecurityIgnoreCommand(locker);
+  await logEvent(locker, 'SECURITY_IGNORED', 'User ignored L1 door security warning', {
+    byUserId: req.user._id
+  });
+
+  return success(res, { message: 'Security warning ignored for Locker L1' });
+});
+
 module.exports = {
   listLockersHandler,
   createLockerHandler,
   unlockLockerHandler,
   lockLockerHandler,
-  releaseLockerHandler
+  releaseLockerHandler,
+  ignoreSecurityAlertHandler
 };
