@@ -4,10 +4,11 @@ const { getStationDB }       = require("../config/stationDB")
 const lockerSchema           = require("../models/station/Locker")
 const stationMemberSchema    = require("../models/station/StationMember")
 const { publishCommand }     = require("../services/mqttService")
-const { processNextInQueue } = require("../utils/queueProcessor")
 const {
   getUserOffer,
-  confirmQueueReservation
+  confirmQueueReservation,
+  processNextInQueue,
+  getQueueStatus
 } = require("../utils/queueProcessor")
 
 // ─────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ const verifyMembership = async (stationId, userId) => {
   return await StationMember.findOne({ user_id: userId, local_status: "active" })
 }
 
-// Shared state derivation helpers — used by hardware-event, sync-states, online routes
+// Shared — derive logical state from hardware signals
 const deriveState = (lockState, doorState) => {
   if (lockState === "locked"   && doorState === "closed") return "lock_close"
   if (lockState === "unlocked" && doorState === "closed") return "unlock_close"
@@ -38,10 +39,14 @@ const deriveState = (lockState, doorState) => {
   return "lock_close"
 }
 
-const deriveAvailability = (state, reserved_by) => {
+// Shared — derive availability from state + reservation + queue hold
+// Pass currentAvailability to preserve queue_hold through hardware events
+const deriveAvailability = (state, reserved_by, currentAvailability) => {
   if (state === "offline")      return "unavailable"
   if (state === "unlock_close") return "unavailable"
   if (state === "fault")        return "unavailable"
+  // Preserve queue_hold — hardware events must not overwrite it
+  if (currentAvailability === "queue_hold" && !reserved_by) return "queue_hold"
   return reserved_by ? "reserved" : "available"
 }
 
@@ -97,8 +102,7 @@ router.get("/:station_id", async (req, res) => {
     const lockers = await Locker.find().select("locker_id lock_state door_state state availability last_reported_at -_id")
 
     // Find the user's own reserved locker — returned separately as my_reservation
-    // This lets frontend show the release banner without exposing reserved_by on other lockers
-    const myLockerRaw = await Locker.findOne({ reserved_by: user_id })
+    const myLockerRaw    = await Locker.findOne({ reserved_by: user_id })
     const my_reservation = myLockerRaw ? {
       locker_id:        myLockerRaw.locker_id,
       lock_state:       myLockerRaw.lock_state,
@@ -122,7 +126,6 @@ router.get("/:station_id", async (req, res) => {
         state:            l.state,
         availability:     l.availability,
         last_reported_at: l.last_reported_at
-        // reserved_by intentionally omitted — use my_reservation for own locker only
       }))
     })
 
@@ -134,9 +137,6 @@ router.get("/:station_id", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // POST /api/lockers/reserve
-// Member reserves a locker
-// If user has an active queue offer, they must use that locker
-// If no queue offer, any available locker can be reserved
 // ─────────────────────────────────────────────────────────
 router.post("/reserve", async (req, res) => {
   try {
@@ -153,7 +153,6 @@ router.post("/reserve", async (req, res) => {
 
     const Locker = getLockerModel(station_id)
 
-    // Check user does not already have a reserved locker
     const alreadyReserved = await Locker.findOne({ reserved_by: user_id })
     if (alreadyReserved) {
       return res.status(400).json({
@@ -165,23 +164,20 @@ router.post("/reserve", async (req, res) => {
     const offer = await getUserOffer(station_id, user_id)
 
     if (offer) {
-      // User is the peek of queue — they must reserve the offered locker only
+      // Peek queue user — must reserve the offered locker only
       if (locker_id !== offer.offered_locker) {
         return res.status(400).json({
-          message: `You have a queue offer for locker ${offer.offered_locker}. You must reserve that locker.`,
+          message:          `You have a queue offer for locker ${offer.offered_locker}. You must reserve that locker.`,
           offered_locker:   offer.offered_locker,
           offer_expires_at: offer.offer_expires_at
         })
       }
     } else {
-      // User has no active offer — check if they are in queue
-      // If they are in queue but not at the peek, block reservation
-      // Only the peek user (who has an active offer) can reserve
-      const { getQueueStatus } = require("../utils/queueProcessor")
+      // No active offer — check if user is waiting in queue
       const queueStatus = await getQueueStatus(station_id, user_id)
       if (queueStatus.in_queue) {
         return res.status(400).json({
-          message: `You are position ${queueStatus.your_position} in the queue. Only the first person in queue can reserve when notified.`,
+          message:       `You are position ${queueStatus.your_position} in the queue. Only the first person in queue can reserve when notified.`,
           your_position: queueStatus.your_position,
           queue_size:    queueStatus.queue_size
         })
@@ -193,7 +189,19 @@ router.post("/reserve", async (req, res) => {
       return res.status(404).json({ message: `Locker ${locker_id} not found` })
     }
 
-    if (locker.availability !== "available") {
+    // Availability check:
+    // "available"   → anyone can reserve (no queue offer needed)
+    // "queue_hold"  → only peek user with active offer can reserve
+    // anything else → blocked for everyone
+    if (locker.availability === "available") {
+      // open to anyone — proceed
+    } else if (locker.availability === "queue_hold" && offer) {
+      // peek user with valid offer — allowed to proceed
+    } else if (locker.availability === "queue_hold" && !offer) {
+      return res.status(400).json({
+        message: `Locker ${locker_id} is held for the queue. Join the queue to get your chance.`
+      })
+    } else {
       return res.status(400).json({
         message: `Locker ${locker_id} is not available. Current state: ${locker.state}`
       })
@@ -205,13 +213,16 @@ router.post("/reserve", async (req, res) => {
     locker.availability = "unavailable"
     await locker.save()
 
-    // If user came from queue, mark their entry as reserved
     if (offer) {
       await confirmQueueReservation(station_id, user_id)
     }
 
     // Send UNLOCK command to ESP32
-    await publishCommand(station_id, locker_id, "UNLOCK")
+    try {
+      await publishCommand(station_id, locker_id, "UNLOCK")
+    } catch {
+      // Hardware not connected — continue anyway
+    }
 
     res.status(200).json({
       message: `Locker ${locker_id} reserved. Unlock command sent to hardware.`,
@@ -256,16 +267,40 @@ router.put("/release", async (req, res) => {
     }
 
     // Clear reservation
-    locker.reserved_by  = null
-    locker.reserved_at  = null
-    locker.availability = "unavailable"
+    locker.reserved_by = null
+    locker.reserved_at = null
+
+    // Try hardware unlock
+    let hardwareConnected = false
+    try {
+      await publishCommand(station_id, locker_id, "UNLOCK")
+      hardwareConnected = true
+    } catch {
+      hardwareConnected = false
+    }
+
+    if (hardwareConnected) {
+      // Wait for ESP32 to report LOCKED+CLOSED via MQTT before marking available
+      locker.availability = "unavailable"
+    } else {
+      // No hardware — reset to available immediately
+      locker.lock_state   = "locked"
+      locker.door_state   = "closed"
+      locker.state        = "lock_close"
+      locker.availability = "available"
+    }
+
     await locker.save()
 
-    // Send UNLOCK so user can retrieve items
-    await publishCommand(station_id, locker_id, "UNLOCK")
+    // Trigger queue if locker is now available
+    if (locker.availability === "available") {
+      await processNextInQueue(station_id, locker_id)
+    }
 
     res.status(200).json({
-      message: `Locker ${locker_id} released. Unlock command sent — open door to retrieve your items.`,
+      message: hardwareConnected
+        ? `Locker ${locker_id} released. Unlock command sent — open door to retrieve your items.`
+        : `Locker ${locker_id} released and is now available.`,
       locker: {
         locker_id:    locker.locker_id,
         availability: locker.availability
@@ -290,7 +325,6 @@ router.put("/offline", async (req, res) => {
     }
 
     const Locker = getLockerModel(station_id)
-
     const locker = await Locker.findOne({ locker_id })
     if (!locker) {
       return res.status(404).json({ message: `Locker ${locker_id} not found` })
@@ -303,11 +337,7 @@ router.put("/offline", async (req, res) => {
 
     res.status(200).json({
       message: `Locker ${locker_id} marked as offline`,
-      locker: {
-        locker_id:    locker.locker_id,
-        state:        locker.state,
-        availability: locker.availability
-      }
+      locker:  { locker_id: locker.locker_id, state: locker.state, availability: locker.availability }
     })
 
   } catch (err) {
@@ -318,8 +348,6 @@ router.put("/offline", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // PUT /api/lockers/online
-// Mark an offline locker back as online
-// Re-derives state from last known lock + door signals
 // ─────────────────────────────────────────────────────────
 router.put("/online", async (req, res) => {
   try {
@@ -330,7 +358,6 @@ router.put("/online", async (req, res) => {
     }
 
     const Locker = getLockerModel(station_id)
-
     const locker = await Locker.findOne({ locker_id })
     if (!locker) {
       return res.status(404).json({ message: `Locker ${locker_id} not found` })
@@ -342,11 +369,8 @@ router.put("/online", async (req, res) => {
       })
     }
 
-    // Re-derive state from last known hardware signals
-    // If signals are valid restore from them, otherwise default to lock_close
     const validLockStates = ["locked", "unlocked"]
     const validDoorStates = ["open", "closed"]
-
     const hasValidSignals =
       validLockStates.includes(locker.lock_state) &&
       validDoorStates.includes(locker.door_state)
@@ -354,21 +378,19 @@ router.put("/online", async (req, res) => {
     if (hasValidSignals) {
       locker.state = deriveState(locker.lock_state, locker.door_state)
     } else {
-      // No valid signals — default to safe locked closed state
       locker.lock_state = "locked"
       locker.door_state = "closed"
       locker.state      = "lock_close"
     }
 
-    // Re-derive availability from restored state + reservation
-    locker.availability =
-      (locker.state === "lock_close" || locker.state === "unlock_open") &&
-      !locker.reserved_by
-        ? "available"
-        : "unavailable"
-
+    locker.availability     = deriveAvailability(locker.state, locker.reserved_by, null)
     locker.last_reported_at = new Date()
     await locker.save()
+
+    // Trigger queue if locker came back as available
+    if (locker.availability === "available") {
+      await processNextInQueue(station_id, locker_id)
+    }
 
     res.status(200).json({
       message: `Locker ${locker_id} is back online`,
@@ -390,9 +412,6 @@ router.put("/online", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // POST /api/lockers/sync-states
-// One-time fix — updates state and availability fields
-// on all lockers in a station based on lock + door signals
-// Run this once on existing data after schema update
 // ─────────────────────────────────────────────────────────
 router.post("/sync-states", async (req, res) => {
   try {
@@ -407,8 +426,9 @@ router.post("/sync-states", async (req, res) => {
 
     let updated = 0
     for (const locker of lockers) {
+      // Pass null for currentAvailability — sync-states is a full reset
       const newState        = deriveState(locker.lock_state, locker.door_state)
-      const newAvailability = deriveAvailability(newState, locker.reserved_by)
+      const newAvailability = deriveAvailability(newState, locker.reserved_by, null)
 
       locker.state        = newState
       locker.availability = newAvailability
@@ -416,21 +436,17 @@ router.post("/sync-states", async (req, res) => {
       updated++
     }
 
-    // After syncing — check if any locker is now available
-    // and trigger queue processing for each available locker found
+    // Trigger queue for any locker that is now available
     let notified = 0
     for (const locker of lockers) {
       if (locker.availability === "available") {
         const result = await processNextInQueue(station_id, locker.locker_id)
-        if (result) {
-          notified++
-          break   // one notification at a time — next locker triggers after reservation
-        }
+        if (result) { notified++; break }
       }
     }
 
     res.status(200).json({
-      message:          `Synced state and availability for ${updated} locker(s) in ${station_id}`,
+      message:          `Synced ${updated} locker(s) in ${station_id}`,
       updated,
       queue_notified:   notified > 0,
       notification_msg: notified > 0
@@ -446,10 +462,6 @@ router.post("/sync-states", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // POST /api/lockers/trigger-queue
-// Manually trigger queue processing for a station
-// Scans for available lockers and notifies first in queue
-// Useful for testing without hardware connected
-// Also called internally when a locker becomes available
 // ─────────────────────────────────────────────────────────
 router.post("/trigger-queue", async (req, res) => {
   try {
@@ -461,27 +473,20 @@ router.post("/trigger-queue", async (req, res) => {
 
     const Locker = getLockerModel(station_id)
 
-    // Find first available locker
     const availableLocker = await Locker.findOne({
-      state:       { $in: ["lock_close", "unlock_open"] },
-      reserved_by: null
+      state:        { $in: ["lock_close", "unlock_open"] },
+      availability: { $in: ["available"] },
+      reserved_by:  null
     })
 
     if (!availableLocker) {
-      return res.status(200).json({
-        message:       "No available lockers to offer",
-        queue_notified: false
-      })
+      return res.status(200).json({ message: "No available lockers to offer", queue_notified: false })
     }
 
-    // Trigger queue processing with this locker
     const result = await processNextInQueue(station_id, availableLocker.locker_id)
 
     if (!result) {
-      return res.status(200).json({
-        message:        "No one in queue to notify",
-        queue_notified: false
-      })
+      return res.status(200).json({ message: "No one in queue to notify", queue_notified: false })
     }
 
     res.status(200).json({
@@ -496,10 +501,10 @@ router.post("/trigger-queue", async (req, res) => {
   }
 })
 
+
 // ─────────────────────────────────────────────────────────
 // PUT /api/lockers/hardware-event
 // Receives lock_state + door_state from physical device
-// Derives logical state and availability automatically
 // ─────────────────────────────────────────────────────────
 router.put("/hardware-event", async (req, res) => {
   try {
@@ -518,14 +523,14 @@ router.put("/hardware-event", async (req, res) => {
     }
 
     const Locker = getLockerModel(station_id)
-
     const locker = await Locker.findOne({ locker_id })
     if (!locker) {
       return res.status(404).json({ message: `Locker ${locker_id} not found` })
     }
 
-    const newState        = deriveState(lock_state, door_state)
-    const newAvailability = deriveAvailability(newState, locker.reserved_by)
+    const prevAvailability = locker.availability
+    const newState         = deriveState(lock_state, door_state)
+    const newAvailability  = deriveAvailability(newState, locker.reserved_by, locker.availability)
 
     locker.lock_state       = lock_state
     locker.door_state       = door_state
@@ -535,7 +540,7 @@ router.put("/hardware-event", async (req, res) => {
     await locker.save()
 
     // Trigger queue if locker just became available
-    if (newAvailability === "available") {
+    if (prevAvailability !== "available" && newAvailability === "available") {
       await processNextInQueue(station_id, locker_id)
     }
 
@@ -554,5 +559,66 @@ router.put("/hardware-event", async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
+
+
+// ─────────────────────────────────────────────────────────
+// POST /api/lockers/unlock
+// Owner manually unlocks their reserved locker
+// Only valid when locker is in lock_close state
+// ─────────────────────────────────────────────────────────
+router.post("/unlock", async (req, res) => {
+  try {
+    const { station_id, user_id, locker_id } = req.body
+
+    if (!station_id || !user_id || !locker_id) {
+      return res.status(400).json({ message: "station_id, user_id and locker_id are required" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker = getLockerModel(station_id)
+    const locker = await Locker.findOne({ locker_id })
+    if (!locker) {
+      return res.status(404).json({ message: `Locker ${locker_id} not found` })
+    }
+
+    // Only the owner can unlock
+    if (!locker.reserved_by || locker.reserved_by.toString() !== user_id.toString()) {
+      return res.status(403).json({ message: "You can only unlock your own reserved locker" })
+    }
+
+    // Only valid from lock_close state
+    if (locker.state !== "lock_close") {
+      return res.status(400).json({
+        message: `Locker can only be unlocked from lock_close state. Current state: ${locker.state}`
+      })
+    }
+
+    // Send UNLOCK command to hardware
+    try {
+      await publishCommand(station_id, locker_id, "UNLOCK")
+    } catch {
+      // No hardware — update state directly
+      locker.lock_state = "unlocked"
+      locker.state      = "unlock_close"
+      await locker.save()
+    }
+
+    res.status(200).json({
+      message: `Unlock command sent to locker ${locker_id}`,
+      locker: {
+        locker_id: locker.locker_id,
+        state:     locker.state
+      }
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
 
 module.exports = router

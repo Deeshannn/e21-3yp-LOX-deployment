@@ -22,15 +22,17 @@ const lockerSchema = new mongoose.Schema({
     default: "lock_close"
   },
 
-  // Availability — derived from state + reservation
+  // Availability — derived from state + reservation + queue
+  // queue_hold = locker is available but held for queue peek user only
   availability: {
     type:    String,
-    enum:    ["available", "reserved", "unavailable"],
+    enum:    ["available", "reserved", "unavailable", "queue_hold"],
     default: "available"
   },
 
-  reserved_by:      { type: mongoose.Schema.Types.ObjectId, default: null },
-  reserved_at:      { type: Date, default: null },
+  reserved_by: { type: mongoose.Schema.Types.ObjectId, default: null },
+  reserved_at: { type: Date, default: null },
+
   last_reported_at: { type: Date, default: Date.now }
 })
 

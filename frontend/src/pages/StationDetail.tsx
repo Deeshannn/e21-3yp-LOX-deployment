@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, DoorClosed, DoorOpen, Lock, LockOpen, MapPin, Package, RefreshCw, Users, X } from "lucide-react";
+import { ArrowLeft, Clock, DoorClosed, DoorOpen, Lock, LockOpen, MapPin, Package, RefreshCw, Users, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { LockerCube } from "@/components/LockerCube";
@@ -9,16 +9,29 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Locker, QueueStatus, Station, StationLockers, api } from "@/lib/api";
 import { toast } from "sonner";
 
+type QueueNotification = {
+  has_notification: boolean;
+  offered_locker?: string;
+  offer_expires_at?: string;
+  minutes_remaining?: number;
+  seconds_remaining?: number;
+  in_queue?: boolean;
+  your_position?: number;
+  queue_size?: number;
+  message: string;
+};
+
 const StationDetail = () => {
   const { stationId = "" } = useParams();
   const { user, userId } = useCurrentUser();
 
-  const [station, setStation] = useState<Station | null>(null);
-  const [data, setData] = useState<StationLockers | null>(null);
-  const [queue, setQueue] = useState<QueueStatus | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [station, setStation]           = useState<Station | null>(null);
+  const [data, setData]                 = useState<StationLockers | null>(null);
+  const [queue, setQueue]               = useState<QueueStatus | null>(null);
+  const [notification, setNotification] = useState<QueueNotification | null>(null);
+  const [selected, setSelected]         = useState<string | null>(null);
+  const [error, setError]               = useState<string | null>(null);
+  const [busy, setBusy]                 = useState<string | null>(null);
 
   const myLocker: Locker | null =
     data?.my_reservation ||
@@ -28,12 +41,14 @@ const StationDetail = () => {
   const reload = useCallback(async () => {
     if (!userId) return;
     try {
-      const [d, q] = await Promise.all([
+      const [d, q, n] = await Promise.all([
         api.stationLockers(stationId, userId),
         api.queueStatus(stationId, userId).catch(() => ({ in_queue: false } as QueueStatus)),
+        api.queueNotification(stationId, userId).catch(() => null),
       ]);
       setData(d);
       setQueue(q);
+      setNotification(n);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -49,6 +64,23 @@ const StationDetail = () => {
   }, [stationId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Auto-select the offered locker when peek user gets a notification
+  useEffect(() => {
+    if (notification?.has_notification && notification.offered_locker) {
+      setSelected(notification.offered_locker);
+    }
+  }, [notification?.has_notification, notification?.offered_locker]);
+
+  // Poll notification every 10 seconds when user is in queue
+  useEffect(() => {
+    if (!userId || !queue?.in_queue) return;
+    const id = setInterval(async () => {
+      const n = await api.queueNotification(stationId, userId).catch(() => null);
+      setNotification(n);
+    }, 10000);
+    return () => clearInterval(id);
+  }, [userId, stationId, queue?.in_queue]);
 
   const reserve = async () => {
     if (!userId || !selected) return;
@@ -68,6 +100,17 @@ const StationDetail = () => {
     try {
       await api.releaseLocker(stationId, userId, lockerId);
       toast.success(`Released ${lockerId}`);
+      await reload();
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const unlockLocker = async (lockerId: string) => {
+    if (!userId) return;
+    setBusy("unlock");
+    try {
+      await api.unlockLocker(stationId, userId, lockerId);
+      toast.success(`Locker ${lockerId} unlocked`);
       await reload();
     } catch (e) { toast.error((e as Error).message); }
     finally { setBusy(null); }
@@ -113,7 +156,14 @@ const StationDetail = () => {
       </Link>
 
       {/* Reserved banner */}
-      {myLocker && <ReservedBanner locker={myLocker} onRelease={() => release(myLocker.locker_id)} busy={busy === "release"} />}
+      {myLocker && (
+        <ReservedBanner
+          locker={myLocker}
+          onRelease={() => release(myLocker.locker_id)}
+          onUnlock={() => unlockLocker(myLocker.locker_id)}
+          busy={busy}
+        />
+      )}
 
       {/* Station header */}
       <header className="glass-card rounded-3xl p-6 md:p-8 mb-6 animate-scale-in">
@@ -153,8 +203,17 @@ const StationDetail = () => {
               selected={selected === l.locker_id}
               onClick={() => {
                 if (myLocker?.locker_id === l.locker_id) return;
-                if (l.availability !== "available") {
-                  toast.error(`Locker ${l.locker_id} is ${l.availability}`);
+                // Peek queue user can click their queue_hold locker
+                const isPeekLocker =
+                  notification?.has_notification &&
+                  notification.offered_locker === l.locker_id &&
+                  l.availability === "queue_hold";
+                if (!isPeekLocker && l.availability !== "available") {
+                  toast.error(
+                    l.availability === "queue_hold"
+                      ? `Locker ${l.locker_id} is held for the queue peek user`
+                      : `Locker ${l.locker_id} is ${l.availability}`
+                  );
                   return;
                 }
                 setSelected(prev => prev === l.locker_id ? null : l.locker_id);
@@ -179,6 +238,7 @@ const StationDetail = () => {
       {/* Smart Queue */}
       <SmartQueue
         queue={queue}
+        notification={notification}
         onJoin={joinQueue}
         onLeave={leaveQueue}
         busy={busy === "queue"}
@@ -201,7 +261,16 @@ function StatChip({ color, label, value }: { color: "cyan" | "violet" | "muted";
   );
 }
 
-function ReservedBanner({ locker, onRelease, busy }: { locker: Locker; onRelease: () => void; busy: boolean }) {
+function ReservedBanner({
+  locker, onRelease, onUnlock, busy,
+}: {
+  locker: Locker;
+  onRelease: () => void;
+  onUnlock: () => void;
+  busy: string | null;
+}) {
+  const canUnlock = locker.state === "lock_close";
+
   return (
     <div className="relative overflow-hidden glass-card rounded-2xl p-5 mb-6 border-emerald-400/30 animate-fade-in">
       <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-brand-cyan/10 to-brand-violet/10" />
@@ -216,15 +285,55 @@ function ReservedBanner({ locker, onRelease, busy }: { locker: Locker; onRelease
             <div className="text-xs text-muted-foreground">Last update: {new Date(locker.last_reported_at).toLocaleString()}</div>
           </div>
         </div>
+
         <div className="flex items-center gap-2 flex-wrap">
-          <StatusPill icon={locker.lock_state === "locked" ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
-            label={`Lock: ${locker.lock_state}`} active={locker.lock_state === "unlocked"} />
-          <StatusPill icon={locker.door_state === "closed" ? <DoorClosed className="w-3.5 h-3.5" /> : <DoorOpen className="w-3.5 h-3.5" />}
-            label={`Door: ${locker.door_state}`} active={locker.door_state === "open"} />
-          <Button onClick={onRelease} disabled={busy} variant="outline" className="border-destructive/50 text-destructive hover:bg-destructive/10">
-            {busy ? "Releasing…" : "Release"}
+          {/* Status pills */}
+          <StatusPill
+            icon={locker.lock_state === "locked" ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
+            label={`Lock: ${locker.lock_state}`}
+            active={locker.lock_state === "unlocked"}
+          />
+          <StatusPill
+            icon={locker.door_state === "closed" ? <DoorClosed className="w-3.5 h-3.5" /> : <DoorOpen className="w-3.5 h-3.5" />}
+            label={`Door: ${locker.door_state}`}
+            active={locker.door_state === "open"}
+          />
+
+          {/* Unlock symbol button — lock happens automatically via hardware after door closes */}
+          <button
+            onClick={onUnlock}
+            disabled={!canUnlock || busy === "unlock"}
+            title={canUnlock ? "Unlock locker" : "Unlock only available when locker is locked"}
+            className={`p-2.5 rounded-xl border transition-all ${
+              canUnlock
+                ? "border-brand-cyan/40 text-brand-cyan hover:bg-brand-cyan/10 cursor-pointer"
+                : "border-border text-muted-foreground/30 cursor-not-allowed"
+            }`}
+          >
+            {busy === "unlock"
+              ? <RefreshCw className="w-5 h-5 animate-spin" />
+              : <LockOpen className="w-5 h-5" />
+            }
+          </button>
+
+          {/* Release button */}
+          <Button
+            onClick={onRelease}
+            disabled={!!busy}
+            variant="outline"
+            className="border-destructive/50 text-destructive hover:bg-destructive/10"
+          >
+            {busy === "release" ? "Releasing…" : "Release"}
           </Button>
         </div>
+      </div>
+
+      {/* State hint */}
+      <div className="relative mt-3 text-[11px] text-muted-foreground">
+        {locker.state === "lock_close"   && "🔒 Locker is locked — press unlock to open it"}
+        {locker.state === "unlock_close" && "🔓 Door is closed — open the door, it will auto-lock when you close it"}
+        {locker.state === "unlock_open"  && "🚪 Door is open — close the door to auto-lock"}
+        {locker.state === "fault"        && "⚠️ Hardware fault detected"}
       </div>
     </div>
   );
@@ -240,8 +349,35 @@ function StatusPill({ icon, label, active }: { icon: React.ReactNode; label: str
 }
 
 function SmartQueue({
-  queue, onJoin, onLeave, busy, disabled,
-}: { queue: QueueStatus | null; onJoin: () => void; onLeave: () => void; busy: boolean; disabled: boolean }) {
+  queue, notification, onJoin, onLeave, busy, disabled,
+}: {
+  queue: QueueStatus | null;
+  notification: QueueNotification | null;
+  onJoin: () => void;
+  onLeave: () => void;
+  busy: boolean;
+  disabled: boolean;
+}) {
+  const [countdown, setCountdown] = useState<{ m: number; s: number } | null>(null);
+
+  // Live countdown — ticks every second when peek user has an active offer
+  useEffect(() => {
+    if (!notification?.has_notification || !notification.offer_expires_at) {
+      setCountdown(null);
+      return;
+    }
+    const tick = () => {
+      const ms = new Date(notification.offer_expires_at!).getTime() - Date.now();
+      if (ms <= 0) { setCountdown({ m: 0, s: 0 }); return; }
+      setCountdown({ m: Math.floor(ms / 60000), s: Math.floor((ms % 60000) / 1000) });
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [notification]);
+
+  const isPeek = notification?.has_notification === true;
+
   return (
     <section className="mt-10 glass-card rounded-3xl p-6 md:p-8 relative overflow-hidden">
       <div className="absolute -right-20 -top-20 w-64 h-64 rounded-full bg-gradient-brand opacity-20 blur-3xl" />
@@ -252,7 +388,9 @@ function SmartQueue({
           </div>
           <h2 className="font-display text-2xl font-bold">Get in line for the next free locker</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {queue?.in_queue
+            {isPeek
+              ? `Locker ${notification!.offered_locker} is available for you — reserve it before time runs out!`
+              : queue?.in_queue
               ? "You're in the queue. We'll notify you the moment a locker frees up."
               : disabled
               ? "You already have a locker. Release it before joining the queue."
@@ -263,15 +401,33 @@ function SmartQueue({
         <div className="flex items-center gap-4">
           {queue?.in_queue ? (
             <>
-              <div className="text-center">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Position</div>
-                <div className="font-display text-4xl font-bold text-gradient-brand">
-                  #{queue.position ?? "—"}
+              {isPeek && countdown ? (
+                /* Peek user — show offered locker + live countdown */
+                <div className="flex flex-col items-center gap-1 min-w-[120px]">
+                  <div className="text-[10px] uppercase tracking-widest text-amber-400 font-mono">Locker offered</div>
+                  <div className="font-display text-3xl font-bold text-amber-400">{notification!.offered_locker}</div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className={`font-mono font-bold text-xl tabular-nums ${
+                      countdown.m === 0 ? "text-red-400" : "text-amber-400"
+                    }`}>
+                      {String(countdown.m).padStart(2, "0")}:{String(countdown.s).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">remaining</div>
                 </div>
-                {queue.total_in_queue ? (
-                  <div className="text-xs text-muted-foreground mt-1">of {queue.total_in_queue} waiting</div>
-                ) : null}
-              </div>
+              ) : (
+                /* Waiting user — show queue position */
+                <div className="text-center min-w-[80px]">
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Position</div>
+                  <div className="font-display text-4xl font-bold text-gradient-brand">
+                    #{queue.position ?? "—"}
+                  </div>
+                  {queue.total_in_queue ? (
+                    <div className="text-xs text-muted-foreground mt-1">of {queue.total_in_queue} waiting</div>
+                  ) : null}
+                </div>
+              )}
               <Button onClick={onLeave} disabled={busy} variant="outline" className="border-border">
                 {busy ? "Leaving…" : "Leave queue"}
               </Button>

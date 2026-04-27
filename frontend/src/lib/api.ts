@@ -166,4 +166,24 @@ export const api = {
 
   queueStatus: (station_id: string, user_id: string) =>
     request<QueueStatus>(`/queue/status/${station_id}?user_id=${user_id}`),
+
+  unlockLocker: (station_id: string, user_id: string, locker_id: string) =>
+    request<{ ok: boolean }>(`/lockers/unlock`, {
+      method: "POST",
+      body: JSON.stringify({ station_id, user_id, locker_id }),
+    }),
+
+  // Check if user has an active locker offer from queue (peek user only)
+  queueNotification: (station_id: string, user_id: string) =>
+    request<{
+      has_notification: boolean;
+      offered_locker?: string;
+      offer_expires_at?: string;
+      minutes_remaining?: number;
+      seconds_remaining?: number;
+      in_queue?: boolean;
+      your_position?: number;
+      queue_size?: number;
+      message: string;
+    }>(`/queue/notification/${station_id}?user_id=${user_id}`),
 };

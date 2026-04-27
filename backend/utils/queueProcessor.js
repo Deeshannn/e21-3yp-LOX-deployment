@@ -2,7 +2,6 @@ const queueSchema  = require("../models/station/Queue")
 const lockerSchema = require("../models/station/Locker")
 const { getStationDB } = require("../config/stationDB")
 
-// Offer window — 15 minutes
 const OFFER_WINDOW_MS = 15 * 60 * 1000
 
 // ─────────────────────────────────────────────────────────
@@ -19,7 +18,6 @@ const getLockerModel = (stationId) => {
   return conn.models.Locker || conn.model("Locker", lockerSchema)
 }
 
-// Get or create the single queue document for this station
 const getOrCreateQueue = async (stationId) => {
   const Queue = getQueueModel(stationId)
   let queue = await Queue.findOne()
@@ -27,12 +25,6 @@ const getOrCreateQueue = async (stationId) => {
   return queue
 }
 
-// ─────────────────────────────────────────────────────────
-// CLEAN UP DONE ENTRIES
-// Physically removes entries that are no longer active
-// Called after every queue mutation to keep DB clean
-// Active statuses: waiting, notified only
-// ─────────────────────────────────────────────────────────
 const cleanDoneEntries = (queue) => {
   const before = queue.entries.length
   queue.entries = queue.entries.filter((e) =>
@@ -44,31 +36,62 @@ const cleanDoneEntries = (queue) => {
   }
 }
 
+// ─────────────────────────────────────────────────────────
+// SET LOCKER QUEUE HOLD
+// Called when peek user is notified — locks the locker
+// so only they can reserve it
+// ─────────────────────────────────────────────────────────
+const setLockerQueueHold = async (stationId, lockerId) => {
+  const Locker = getLockerModel(stationId)
+  const locker = await Locker.findOne({ locker_id: lockerId })
+  if (locker && locker.availability === "available") {
+    locker.availability = "queue_hold"
+    await locker.save()
+    console.log(`Queue hold set on locker ${lockerId} at ${stationId}`)
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// RELEASE LOCKER QUEUE HOLD
+// Called when offer expires or user leaves queue
+// Restores locker to available so others can reserve
+// ─────────────────────────────────────────────────────────
+const releaseLockerQueueHold = async (stationId, lockerId) => {
+  if (!lockerId) return
+  const Locker = getLockerModel(stationId)
+  const locker = await Locker.findOne({ locker_id: lockerId })
+  if (locker && locker.availability === "queue_hold") {
+    locker.availability = "available"
+    await locker.save()
+    console.log(`Queue hold released on locker ${lockerId} at ${stationId}`)
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────
 // EXPIRE STALE OFFERS
-// If notified user did not reserve within 15 min,
-// remove their entry and let processNextInQueue move on
 // ─────────────────────────────────────────────────────────
 const expireStaleOffers = async (stationId) => {
   const queue = await getOrCreateQueue(stationId)
   const now   = new Date()
   let changed = false
 
-  queue.entries.forEach((entry) => {
+  for (const entry of queue.entries) {
     if (
       entry.status === "notified" &&
       entry.offer_expires_at &&
       now > entry.offer_expires_at
     ) {
+      // Release the queue_hold on the locker before expiring
+      await releaseLockerQueueHold(stationId, entry.offered_locker)
+
       entry.status = "expired"
       changed = true
       console.log(`Queue [${stationId}]: offer expired for user ${entry.user_id}`)
     }
-  })
+  }
 
   if (changed) {
-    // Remove expired entries immediately
     cleanDoneEntries(queue)
     queue.updated_at = new Date()
     await queue.save()
@@ -82,15 +105,9 @@ const expireStaleOffers = async (stationId) => {
 // JOIN QUEUE
 // ─────────────────────────────────────────────────────────
 const joinQueue = async (stationId, userId) => {
-  const queue = await getOrCreateQueue(stationId)
-
-  // Clean stale entries before checking
   await expireStaleOffers(stationId)
-
-  // Reload after cleanup
   const freshQueue = await getOrCreateQueue(stationId)
 
-  // Check if user is already in queue
   const alreadyIn = freshQueue.entries.find(
     (e) => e.user_id.toString() === userId.toString()
   )
@@ -99,7 +116,6 @@ const joinQueue = async (stationId, userId) => {
     return { success: false, message: "You are already in the queue", position }
   }
 
-  // Check queue size limit
   if (freshQueue.entries.length >= freshQueue.max_size) {
     return {
       success: false,
@@ -107,7 +123,6 @@ const joinQueue = async (stationId, userId) => {
     }
   }
 
-  // Add to end of queue
   freshQueue.entries.push({
     user_id:   userId,
     joined_at: new Date(),
@@ -127,19 +142,27 @@ const joinQueue = async (stationId, userId) => {
 
 // ─────────────────────────────────────────────────────────
 // LEAVE QUEUE
-// Removes the user's entry from the array entirely
+// Releases queue_hold on locker if user was notified
 // ─────────────────────────────────────────────────────────
 const leaveQueue = async (stationId, userId) => {
   const queue = await getOrCreateQueue(stationId)
 
-  const before = queue.entries.length
+  const leavingEntry = queue.entries.find(
+    (e) => e.user_id.toString() === userId.toString()
+  )
+
+  if (!leavingEntry) {
+    return { success: false, message: "You are not in the queue" }
+  }
+
+  // If user was notified, release the queue_hold on their offered locker
+  if (leavingEntry.status === "notified" && leavingEntry.offered_locker) {
+    await releaseLockerQueueHold(stationId, leavingEntry.offered_locker)
+  }
+
   queue.entries = queue.entries.filter(
     (e) => e.user_id.toString() !== userId.toString()
   )
-
-  if (queue.entries.length === before) {
-    return { success: false, message: "You are not in the queue" }
-  }
 
   queue.updated_at = new Date()
   await queue.save()
@@ -152,12 +175,10 @@ const leaveQueue = async (stationId, userId) => {
 // GET QUEUE STATUS
 // ─────────────────────────────────────────────────────────
 const getQueueStatus = async (stationId, userId) => {
-  // Expire stale offers before reading
   await expireStaleOffers(stationId)
-
   const queue = await getOrCreateQueue(stationId)
 
-  const userEntry   = queue.entries.find(
+  const userEntry    = queue.entries.find(
     (e) => e.user_id.toString() === userId.toString()
   )
   const userPosition = userEntry
@@ -179,12 +200,10 @@ const getQueueStatus = async (stationId, userId) => {
 
 // ─────────────────────────────────────────────────────────
 // PROCESS NEXT IN QUEUE
-// Called by MQTT service when a locker becomes available
+// Sets queue_hold on the locker so only peek user can reserve
 // ─────────────────────────────────────────────────────────
 const processNextInQueue = async (stationId, lockerId) => {
-  // Expire stale offers first
   await expireStaleOffers(stationId)
-
   const queue = await getOrCreateQueue(stationId)
 
   // If someone is already notified, do not notify another
@@ -194,14 +213,19 @@ const processNextInQueue = async (stationId, lockerId) => {
     return null
   }
 
-  // Get next waiting user
   const nextEntry = queue.entries.find((e) => e.status === "waiting")
   if (!nextEntry) {
-    console.log(`Queue [${stationId}]: queue empty, no one to notify`)
+    // Queue is empty — ensure locker stays available for everyone
+    // Release queue_hold if it was set (e.g. previous offer expired and queue is now empty)
+    await releaseLockerQueueHold(stationId, lockerId)
+    console.log(`Queue [${stationId}]: queue empty — locker ${lockerId} released to available`)
     return null
   }
 
-  // Notify them with 15 min window
+  // Queue has users — set queue_hold so only peek user can reserve
+  await setLockerQueueHold(stationId, lockerId)
+
+  // Notify the peek user
   nextEntry.status           = "notified"
   nextEntry.notified_at      = new Date()
   nextEntry.offered_locker   = lockerId
@@ -223,11 +247,11 @@ const processNextInQueue = async (stationId, lockerId) => {
 // ─────────────────────────────────────────────────────────
 // CONFIRM QUEUE RESERVATION
 // User reserved the offered locker — remove from queue
+// No need to release queue_hold — locker is now reserved
 // ─────────────────────────────────────────────────────────
 const confirmQueueReservation = async (stationId, userId) => {
   const queue = await getOrCreateQueue(stationId)
 
-  // Remove this user from queue entirely — they got their locker
   queue.entries = queue.entries.filter(
     (e) => e.user_id.toString() !== userId.toString()
   )
@@ -239,7 +263,6 @@ const confirmQueueReservation = async (stationId, userId) => {
 
 // ─────────────────────────────────────────────────────────
 // GET USER OFFER
-// Returns active offer for a user if within window
 // ─────────────────────────────────────────────────────────
 const getUserOffer = async (stationId, userId) => {
   const queue = await getOrCreateQueue(stationId)

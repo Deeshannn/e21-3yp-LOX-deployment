@@ -21,18 +21,13 @@ const verifyMembership = async (stationId, userId) => {
   return await StationMember.findOne({ user_id: userId, local_status: "active" })
 }
 
-// A locker is reservable if:
-//   - state is lock_close or unlock_open  (resting states)
-//   - AND no reserved_by (not owned by anyone)
-// This works even on old documents that have no availability field
+// A locker is freely reservable (no queue needed) when:
+//   - state is a resting state AND no owner AND not queue_hold
+// queue_hold means a locker is held for the peek queue user — others must join queue
 const hasReservableLocker = async (stationId) => {
   const conn   = getStationDB(stationId)
   const Locker = conn.models.Locker || conn.model("Locker", lockerSchema)
 
-  // A locker is reservable when ANY of these conditions are true:
-  // 1. state is a resting state AND no owner           (new documents with state field)
-  // 2. availability is "available"                     (documents with availability field)
-  // 3. no state field at all AND no reserved_by        (old documents before schema update)
   const locker = await Locker.findOne({
     $and: [
       { reserved_by: null },
@@ -43,8 +38,9 @@ const hasReservableLocker = async (stationId) => {
           { state:        { $exists: false } }
         ]
       },
-      // Exclude offline and fault states explicitly
-      { state: { $nin: ["offline", "fault", "unlock_close"] } }
+      // Exclude bad states and queue_hold — queue_hold is not freely reservable
+      { state:        { $nin: ["offline", "fault", "unlock_close"] } },
+      { availability: { $nin: ["queue_hold", "reserved", "unavailable"] } }
     ]
   })
   return !!locker
@@ -53,7 +49,7 @@ const hasReservableLocker = async (stationId) => {
 
 // ─────────────────────────────────────────────────────────
 // POST /api/queue/join
-// Member joins queue only when ALL lockers are unavailable
+// Member joins queue only when no lockers are freely available
 // ─────────────────────────────────────────────────────────
 router.post("/join", async (req, res) => {
   try {
@@ -63,13 +59,12 @@ router.post("/join", async (req, res) => {
       return res.status(400).json({ message: "station_id and user_id are required" })
     }
 
-    // Verify membership
     const member = await verifyMembership(station_id, user_id)
     if (!member) {
       return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
     }
 
-    // Block joining if any locker is reservable
+    // Block joining if any locker is freely reservable
     const reservable = await hasReservableLocker(station_id)
     if (reservable) {
       return res.status(400).json({
@@ -88,7 +83,7 @@ router.post("/join", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // DELETE /api/queue/leave
-// Member voluntarily leaves the queue — entry removed from DB
+// Member voluntarily leaves — queue_hold released if peek
 // ─────────────────────────────────────────────────────────
 router.delete("/leave", async (req, res) => {
   try {
@@ -114,7 +109,6 @@ router.delete("/leave", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // GET /api/queue/status/:station_id
-// Member checks their queue position and offer status
 // ─────────────────────────────────────────────────────────
 router.get("/status/:station_id", async (req, res) => {
   try {
@@ -130,18 +124,16 @@ router.get("/status/:station_id", async (req, res) => {
       return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
     }
 
-    // Expire stale offers before returning status
     await expireStaleOffers(station_id)
 
     const status = await getQueueStatus(station_id, user_id)
-    // Normalize response shape to match frontend expectations
     res.status(200).json({
-      message:        `Queue status for station ${station_id}`,
-      in_queue:       status.in_queue,
-      position:       status.your_position,
-      total_in_queue: status.queue_size,
-      your_status:    status.your_status,
-      offered_locker: status.offered_locker,
+      message:          `Queue status for station ${station_id}`,
+      in_queue:         status.in_queue,
+      position:         status.your_position,
+      total_in_queue:   status.queue_size,
+      your_status:      status.your_status,
+      offered_locker:   status.offered_locker,
       offer_expires_at: status.offer_expires_at
     })
 
@@ -153,10 +145,6 @@ router.get("/status/:station_id", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────
 // GET /api/queue/notification/:station_id
-// Client polls this to check if they have a locker offer
-// Returns offer details if user is at top of queue
-// and a locker has been assigned to them
-// Returns nothing if user has no active offer
 // ─────────────────────────────────────────────────────────
 router.get("/notification/:station_id", async (req, res) => {
   try {
@@ -167,22 +155,17 @@ router.get("/notification/:station_id", async (req, res) => {
       return res.status(400).json({ message: "user_id is required as a query parameter" })
     }
 
-    // Verify membership
     const member = await verifyMembership(station_id, user_id)
     if (!member) {
       return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
     }
 
-    // Expire any stale offers before checking
     await expireStaleOffers(station_id)
 
-    // Check if this user has an active offer
     const offer = await getUserOffer(station_id, user_id)
 
     if (!offer) {
-      // No offer — check if they are still in queue so client knows their state
       const status = await getQueueStatus(station_id, user_id)
-
       return res.status(200).json({
         has_notification: false,
         in_queue:         status.in_queue,
@@ -194,9 +177,8 @@ router.get("/notification/:station_id", async (req, res) => {
       })
     }
 
-    // User has an active offer — calculate time remaining
-    const now              = new Date()
-    const ms_remaining     = offer.offer_expires_at - now
+    const now               = new Date()
+    const ms_remaining      = offer.offer_expires_at - now
     const minutes_remaining = Math.max(0, Math.floor(ms_remaining / 60000))
     const seconds_remaining = Math.max(0, Math.floor((ms_remaining % 60000) / 1000))
 
