@@ -9,6 +9,7 @@ const {
 } = require("../utils/queueProcessor")
 const lockerSchema        = require("../models/station/Locker")
 const stationMemberSchema = require("../models/station/StationMember")
+const queueSchema         = require("../models/station/Queue")
 const { getStationDB }    = require("../config/stationDB")
 
 // ─────────────────────────────────────────────────────────
@@ -189,6 +190,97 @@ router.get("/notification/:station_id", async (req, res) => {
       offer_expires_at:  offer.offer_expires_at,
       minutes_remaining,
       seconds_remaining
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// GET /api/queue/admin/:station_id
+// Sub admin view — full queue details including user info
+// Shows all waiting and notified users with positions
+// ─────────────────────────────────────────────────────────
+router.get("/admin/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+
+    // Get queue from station DB
+    const conn  = getStationDB(station_id)
+    const Queue = conn.models.Queue || conn.model("Queue", queueSchema)
+
+    let queue = await Queue.findOne()
+    if (!queue) {
+      return res.status(200).json({
+        message:     `Queue for station ${station_id}`,
+        station_id,
+        total:       0,
+        waiting:     0,
+        notified:    0,
+        max_size:    10,
+        queue_full:  false,
+        entries:     []
+      })
+    }
+
+    // Expire stale offers before returning admin view
+    await expireStaleOffers(station_id)
+
+    // Reload after expiry
+    queue = await Queue.findOne()
+
+    // Fetch user details from Master DB for each entry
+    const mongoose = require("mongoose")
+    const User     = require("../models/master/User")
+
+    const entries = await Promise.all(
+      queue.entries.map(async (entry, index) => {
+        // Look up user in Master DB
+        let user = null
+        try {
+          const userDoc = await User.findById(entry.user_id).select("name email")
+          if (userDoc) {
+            user = { id: userDoc._id, name: userDoc.name, email: userDoc.email }
+          }
+        } catch {
+          user = null
+        }
+
+        const now            = new Date()
+        const timeInQueue    = Math.floor((now - new Date(entry.joined_at)) / 60000)
+        const timeRemaining  = entry.offer_expires_at
+          ? Math.max(0, Math.floor((new Date(entry.offer_expires_at) - now) / 1000))
+          : null
+
+        return {
+          position:         index + 1,
+          user_id:          entry.user_id,
+          user:             user || { id: entry.user_id, name: "Unknown", email: "—" },
+          status:           entry.status,
+          joined_at:        entry.joined_at,
+          minutes_in_queue: timeInQueue,
+          // Only for notified (peek) user
+          offered_locker:   entry.status === "notified" ? entry.offered_locker   : null,
+          offer_expires_at: entry.status === "notified" ? entry.offer_expires_at : null,
+          seconds_remaining: entry.status === "notified" ? timeRemaining          : null
+        }
+      })
+    )
+
+    const waitingCount  = entries.filter((e) => e.status === "waiting").length
+    const notifiedCount = entries.filter((e) => e.status === "notified").length
+
+    res.status(200).json({
+      message:    `Queue details for station ${station_id}`,
+      station_id,
+      total:      entries.length,
+      waiting:    waitingCount,
+      notified:   notifiedCount,
+      max_size:   queue.max_size,
+      queue_full: entries.length >= queue.max_size,
+      entries
     })
 
   } catch (err) {

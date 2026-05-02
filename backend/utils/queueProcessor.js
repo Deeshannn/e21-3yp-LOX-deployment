@@ -2,7 +2,7 @@ const queueSchema  = require("../models/station/Queue")
 const lockerSchema = require("../models/station/Locker")
 const { getStationDB } = require("../config/stationDB")
 
-const OFFER_WINDOW_MS = 15 * 60 * 1000
+const OFFER_WINDOW_MS = 5 * 60 * 1000
 
 // ─────────────────────────────────────────────────────────
 // MODEL HELPERS

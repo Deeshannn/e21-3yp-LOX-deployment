@@ -621,4 +621,344 @@ router.post("/unlock", async (req, res) => {
 })
 
 
+
+// ─────────────────────────────────────────────────────────
+// POST /api/lockers/admin-release
+// Sub admin force releases an overdue locker
+// Clears reservation and sends UNLOCK to hardware
+// User must come back and collect items then door auto locks
+// ─────────────────────────────────────────────────────────
+router.post("/admin-release", async (req, res) => {
+  try {
+    const { station_id, locker_id } = req.body
+
+    if (!station_id || !locker_id) {
+      return res.status(400).json({ message: "station_id and locker_id are required" })
+    }
+
+    const Locker = getLockerModel(station_id)
+    const locker = await Locker.findOne({ locker_id })
+    if (!locker) {
+      return res.status(404).json({ message: `Locker ${locker_id} not found` })
+    }
+
+    if (locker.availability !== "overdue") {
+      return res.status(400).json({
+        message: `Locker ${locker_id} is not overdue. Current availability: ${locker.availability}`
+      })
+    }
+
+    // Clear reservation and release request
+    locker.reserved_by           = null
+    locker.reserved_at           = null
+    locker.overdue_at            = null
+    locker.release_requested     = false
+    locker.release_requested_at  = null
+
+    // Try to unlock so user can retrieve items
+    let hardwareConnected = false
+    try {
+      await publishCommand(station_id, locker_id, "UNLOCK")
+      hardwareConnected = true
+      locker.availability = "unavailable"  // wait for door cycle to complete
+    } catch {
+      // No hardware — reset directly
+      locker.lock_state   = "locked"
+      locker.door_state   = "closed"
+      locker.state        = "lock_close"
+      locker.availability = "available"
+    }
+
+    await locker.save()
+
+    // Trigger queue if locker is now available
+    if (locker.availability === "available") {
+      await processNextInQueue(station_id, locker_id)
+    }
+
+    res.status(200).json({
+      message: hardwareConnected
+        ? `Locker ${locker_id} admin-released. Unlock command sent — user should retrieve items.`
+        : `Locker ${locker_id} admin-released and is now available.`,
+      locker: {
+        locker_id:    locker.locker_id,
+        availability: locker.availability,
+        state:        locker.state
+      }
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// GET /api/lockers/time-remaining/:station_id
+// Returns how much free time the user has left on their
+// reserved locker before it becomes overdue
+// ─────────────────────────────────────────────────────────
+router.get("/time-remaining/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+    const { user_id }    = req.query
+
+    if (!user_id) {
+      return res.status(400).json({ message: "user_id is required as a query parameter" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker = getLockerModel(station_id)
+
+    // Find user's reserved locker
+    const locker = await Locker.findOne({ reserved_by: user_id })
+    if (!locker) {
+      return res.status(404).json({ message: "You have no reserved locker at this station." })
+    }
+
+    // Get station free_minutes setting
+    const { getOrCreateSettings } = require("../utils/overdueChecker")
+    const settings = await getOrCreateSettings(station_id)
+
+    // No time limit set
+    if (!settings.free_minutes || settings.free_minutes === 0) {
+      return res.status(200).json({
+        locker_id:       locker.locker_id,
+        availability:    locker.availability,
+        reserved_at:     locker.reserved_at,
+        free_minutes:    0,
+        time_limit:      false,
+        message:         "No time limit set for this station"
+      })
+    }
+
+    // Locker already overdue
+    if (locker.availability === "overdue") {
+      return res.status(200).json({
+        locker_id:         locker.locker_id,
+        availability:      "overdue",
+        reserved_at:       locker.reserved_at,
+        overdue_at:        locker.overdue_at,
+        free_minutes:      settings.free_minutes,
+        time_limit:        true,
+        is_overdue:        true,
+        minutes_remaining: 0,
+        seconds_remaining: 0,
+        message:           "Your locker time has expired. Please contact the station admin to release it."
+      })
+    }
+
+    // Calculate time remaining
+    const now             = new Date()
+    const expiresAt       = new Date(locker.reserved_at.getTime() + settings.free_minutes * 60 * 1000)
+    const ms_remaining    = expiresAt - now
+    const isOverdue       = ms_remaining <= 0
+
+    const minutes_remaining = isOverdue ? 0 : Math.floor(ms_remaining / 60000)
+    const seconds_remaining = isOverdue ? 0 : Math.floor((ms_remaining % 60000) / 1000)
+
+    res.status(200).json({
+      locker_id:         locker.locker_id,
+      availability:      locker.availability,
+      reserved_at:       locker.reserved_at,
+      expires_at:        expiresAt,
+      free_minutes:      settings.free_minutes,
+      time_limit:        true,
+      is_overdue:        isOverdue,
+      minutes_remaining,
+      seconds_remaining,
+      message: isOverdue
+        ? "Your locker time has expired. Please contact the station admin to release it."
+        : `You have ${minutes_remaining}m ${seconds_remaining}s remaining before your locker is locked.`
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// GET /api/lockers/overdue-status/:station_id
+// User polls this to check if their locker is overdue
+// Acts as the notification endpoint for the user
+// ─────────────────────────────────────────────────────────
+router.get("/overdue-status/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+    const { user_id }    = req.query
+
+    if (!user_id) {
+      return res.status(400).json({ message: "user_id is required as a query parameter" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker = getLockerModel(station_id)
+    const locker = await Locker.findOne({ reserved_by: user_id })
+
+    if (!locker) {
+      return res.status(200).json({
+        has_overdue:  false,
+        message:      "You have no reserved locker at this station."
+      })
+    }
+
+    if (locker.availability !== "overdue") {
+      return res.status(200).json({
+        has_overdue:          false,
+        locker_id:            locker.locker_id,
+        availability:         locker.availability,
+        release_requested:    locker.release_requested,
+        message:              "Your locker is active and within time limit."
+      })
+    }
+
+    // Locker is overdue
+    const overdueMinutes = locker.overdue_at
+      ? Math.floor((Date.now() - new Date(locker.overdue_at).getTime()) / 60000)
+      : 0
+
+    res.status(200).json({
+      has_overdue:          true,
+      locker_id:            locker.locker_id,
+      availability:         locker.availability,
+      overdue_at:           locker.overdue_at,
+      overdue_minutes:      overdueMinutes,
+      release_requested:    locker.release_requested,
+      release_requested_at: locker.release_requested_at,
+      message:              locker.release_requested
+        ? "Your locker is overdue. Release request has been sent to the station admin. Please wait for approval."
+        : "Your locker is overdue. Please request a release from the station admin."
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// POST /api/lockers/request-release
+// User manually requests admin to release their overdue locker
+// (Auto-requested when overdue, but user can re-request)
+// ─────────────────────────────────────────────────────────
+router.post("/request-release", async (req, res) => {
+  try {
+    const { station_id, user_id } = req.body
+
+    if (!station_id || !user_id) {
+      return res.status(400).json({ message: "station_id and user_id are required" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker = getLockerModel(station_id)
+    const locker = await Locker.findOne({ reserved_by: user_id })
+
+    if (!locker) {
+      return res.status(404).json({ message: "You have no reserved locker at this station." })
+    }
+
+    if (locker.availability !== "overdue") {
+      return res.status(400).json({
+        message: `Your locker is not overdue. Current status: ${locker.availability}`
+      })
+    }
+
+    if (locker.release_requested) {
+      return res.status(400).json({
+        message:              "Release already requested. Please wait for admin approval.",
+        release_requested_at: locker.release_requested_at
+      })
+    }
+
+    locker.release_requested    = true
+    locker.release_requested_at = new Date()
+    await locker.save()
+
+    res.status(200).json({
+      message:              "Release request sent to station admin. Please wait for approval.",
+      locker_id:            locker.locker_id,
+      release_requested_at: locker.release_requested_at
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// GET /api/lockers/admin/overdues/:station_id
+// Admin view — all overdue lockers with user details
+// and release request status
+// ─────────────────────────────────────────────────────────
+router.get("/admin/overdues/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+
+    const Locker = getLockerModel(station_id)
+    const User   = require("../models/master/User")
+
+    // Get all overdue lockers
+    const overdues = await Locker.find({ availability: "overdue" })
+
+    const result = await Promise.all(
+      overdues.map(async (locker) => {
+        // Fetch user details from Master DB
+        let user = null
+        try {
+          const userDoc = await User.findById(locker.reserved_by).select("name email")
+          if (userDoc) user = { id: userDoc._id, name: userDoc.name, email: userDoc.email }
+        } catch { user = null }
+
+        const now            = new Date()
+        const overdueMinutes = locker.overdue_at
+          ? Math.floor((now - new Date(locker.overdue_at)) / 60000)
+          : 0
+
+        return {
+          locker_id:            locker.locker_id,
+          state:                locker.state,
+          user:                 user || { id: locker.reserved_by, name: "Unknown", email: "—" },
+          reserved_at:          locker.reserved_at,
+          overdue_at:           locker.overdue_at,
+          overdue_minutes:      overdueMinutes,
+          release_requested:    locker.release_requested,
+          release_requested_at: locker.release_requested_at
+        }
+      })
+    )
+
+    // Sort — release requested ones first
+    result.sort((a, b) => {
+      if (a.release_requested && !b.release_requested) return -1
+      if (!a.release_requested && b.release_requested) return 1
+      return new Date(a.overdue_at) - new Date(b.overdue_at)
+    })
+
+    res.status(200).json({
+      message:           `Overdue lockers for station ${station_id}`,
+      station_id,
+      total_overdue:     result.length,
+      pending_requests:  result.filter((l) => l.release_requested).length,
+      overdues:          result
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
 module.exports = router

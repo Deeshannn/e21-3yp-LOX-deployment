@@ -1,5 +1,5 @@
 import { Locker } from "@/lib/api";
-import { Lock, LockOpen, DoorClosed, DoorOpen } from "lucide-react";
+import { Lock, LockOpen } from "lucide-react";
 
 type Props = {
   locker: Locker;
@@ -10,12 +10,12 @@ type Props = {
 
 export function LockerCube({ locker, isMine, onClick, selected }: Props) {
   const stateClass = isMine
-    ? "iso-state-mine"
+    ? "box-state-mine"
     : locker.availability === "available"
-    ? "iso-state-available"
+    ? "box-state-available"
     : locker.availability === "reserved"
-    ? "iso-state-reserved"
-    : "iso-state-unavailable";
+    ? "box-state-reserved"
+    : "box-state-unavailable";
 
   const label =
     isMine ? "Yours"
@@ -23,29 +23,42 @@ export function LockerCube({ locker, isMine, onClick, selected }: Props) {
       : locker.availability === "reserved" ? "Reserved"
       : "Unavailable";
 
+  const doorOpen = locker.door_state === "open";
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative text-left rounded-2xl p-4 transition-all duration-300
+      className={`group relative text-left rounded-xl p-2.5 transition-all duration-300
         ${selected ? "ring-2 ring-brand-cyan glow-blue" : "ring-1 ring-border hover:ring-brand-violet"}
         bg-card/40 backdrop-blur-md`}
     >
-      <div className="iso-stage">
-        <div className={`iso-cube ${stateClass}`}>
-          <div className="face top flex items-center justify-center">
-            <span className="font-display font-bold text-primary-foreground/90 text-xl tracking-tight drop-shadow">
-              {locker.locker_id}
-            </span>
+      <div className="locker-stage">
+        <div className={`locker-box ${stateClass} ${doorOpen ? "door-open" : "door-closed"}`}>
+          {/* Box shell */}
+          <div className="lb-face lb-back" />
+          <div className="lb-face lb-left" />
+          <div className="lb-face lb-right" />
+          <div className="lb-face lb-top" />
+          <div className="lb-face lb-bottom" />
+          {/* Interior (visible when door opens) */}
+          <div className="lb-interior">
+            <span className="lb-id">{locker.locker_id}</span>
           </div>
-          <div className="face left" />
-          <div className="face right" />
+          {/* Hinged door */}
+          <div className="lb-door">
+            <div className="lb-door-front">
+              <span className="lb-door-id">{locker.locker_id}</span>
+              <span className="lb-handle" />
+            </div>
+            <div className="lb-door-back" />
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
+      <div className="mt-2.5 flex items-center justify-between">
         <span
-          className={`text-[11px] uppercase tracking-widest font-semibold
+          className={`text-[10px] uppercase tracking-widest font-semibold
             ${isMine ? "text-emerald-300"
               : locker.availability === "available" ? "text-brand-cyan"
               : locker.availability === "reserved" ? "text-brand-purple"
@@ -53,14 +66,11 @@ export function LockerCube({ locker, isMine, onClick, selected }: Props) {
         >
           {label}
         </span>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span title={`Lock: ${locker.lock_state}`}>
-            {locker.lock_state === "locked" ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5 text-brand-cyan" />}
-          </span>
-          <span title={`Door: ${locker.door_state}`}>
-            {locker.door_state === "closed" ? <DoorClosed className="w-3.5 h-3.5" /> : <DoorOpen className="w-3.5 h-3.5 text-brand-cyan" />}
-          </span>
-        </div>
+        <span title={`Lock: ${locker.lock_state}`} className="text-muted-foreground">
+          {locker.lock_state === "locked"
+            ? <Lock className="w-3 h-3" />
+            : <LockOpen className="w-3 h-3 text-brand-cyan" />}
+        </span>
       </div>
     </button>
   );

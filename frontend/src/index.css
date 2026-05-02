@@ -160,50 +160,133 @@
     color: transparent;
   }
 
-  /* Isometric locker cube */
-  .iso-stage {
-    perspective: 1200px;
-    perspective-origin: 50% 30%;
-  }
-  .iso-cube {
-    position: relative;
+  /* ---------- Realistic 3D Locker Box ---------- */
+  .locker-stage {
+    perspective: 800px;
+    perspective-origin: 50% 45%;
     width: 100%;
     aspect-ratio: 1 / 1;
+  }
+  .locker-box {
+    position: relative;
+    width: 100%;
+    height: 100%;
     transform-style: preserve-3d;
-    transform: rotateX(28deg) rotateZ(-32deg);
-    transition: transform 500ms var(--transition-spring), filter 300ms ease;
+    transform: rotateX(-12deg) rotateY(-22deg);
+    transition: transform 600ms var(--transition-spring);
+    --depth: 38px;
   }
-  .iso-cube:hover { transform: rotateX(22deg) rotateZ(-32deg) translateY(-6px) scale(1.04); }
-  .iso-cube .face {
+  .locker-box:hover { transform: rotateX(-10deg) rotateY(-28deg) translateY(-4px); }
+
+  .lb-face {
     position: absolute;
-    inset: 0;
-    border-radius: 14px;
     border: 1px solid hsl(var(--border));
-    box-shadow: var(--shadow-cube);
+    background: linear-gradient(135deg, hsl(240 30% 12%), hsl(240 35% 8%));
   }
-  .iso-cube .face.top {
-    background: linear-gradient(135deg, hsl(var(--brand-blue) / 0.85), hsl(var(--brand-violet) / 0.85));
-    transform: translateZ(28px);
+  .lb-back {
+    inset: 0;
+    transform: translateZ(0);
+    background: linear-gradient(135deg, hsl(240 35% 14%), hsl(240 40% 9%));
+    box-shadow: inset 0 0 24px hsl(0 0% 0% / 0.55);
   }
-  .iso-cube .face.left {
-    background: linear-gradient(180deg, hsl(var(--brand-indigo) / 0.7), hsl(var(--brand-purple) / 0.55));
-    transform: rotateY(-90deg) translateZ(0) translateX(-50%);
+  .lb-left {
+    top: 0; left: 0; height: 100%; width: var(--depth);
     transform-origin: left center;
-    width: 56px;
-    left: 0;
+    transform: rotateY(-90deg) translateX(calc(var(--depth) * -0.5)) translateZ(calc(var(--depth) * 0.5));
+    background: linear-gradient(180deg, hsl(240 30% 16%), hsl(240 35% 9%));
   }
-  .iso-cube .face.right {
-    background: linear-gradient(180deg, hsl(var(--brand-violet) / 0.7), hsl(var(--brand-purple) / 0.55));
-    transform: rotateY(90deg) translateZ(0) translateX(50%);
+  .lb-right {
+    top: 0; right: 0; height: 100%; width: var(--depth);
     transform-origin: right center;
-    width: 56px;
-    right: 0;
+    transform: rotateY(90deg) translateX(calc(var(--depth) * 0.5)) translateZ(calc(var(--depth) * 0.5));
+    background: linear-gradient(180deg, hsl(240 25% 14%), hsl(240 30% 8%));
+  }
+  .lb-top {
+    top: 0; left: 0; width: 100%; height: var(--depth);
+    transform-origin: top center;
+    transform: rotateX(90deg) translateY(calc(var(--depth) * -0.5)) translateZ(calc(var(--depth) * 0.5));
+    background: linear-gradient(180deg, hsl(240 35% 18%), hsl(240 30% 12%));
+  }
+  .lb-bottom {
+    bottom: 0; left: 0; width: 100%; height: var(--depth);
+    transform-origin: bottom center;
+    transform: rotateX(-90deg) translateY(calc(var(--depth) * 0.5)) translateZ(calc(var(--depth) * 0.5));
+    background: linear-gradient(180deg, hsl(240 25% 10%), hsl(240 30% 6%));
   }
 
-  .iso-state-available  .face.top { background: linear-gradient(135deg, hsl(190 100% 55%), hsl(230 95% 60%)); box-shadow: 0 0 30px hsl(var(--brand-cyan) / 0.4) inset, 0 18px 35px -18px hsl(var(--brand-cyan) / 0.6); }
-  .iso-state-reserved   .face.top { background: linear-gradient(135deg, hsl(285 85% 65%), hsl(265 85% 55%)); }
-  .iso-state-unavailable .face.top { background: linear-gradient(135deg, hsl(240 15% 30%), hsl(240 15% 18%)); }
-  .iso-state-mine       .face.top { background: linear-gradient(135deg, hsl(140 85% 55%), hsl(190 100% 60%)); box-shadow: 0 0 40px hsl(140 85% 55% / 0.6) inset; }
+  .lb-interior {
+    position: absolute;
+    inset: 6px;
+    transform: translateZ(2px);
+    border-radius: 8px;
+    background:
+      radial-gradient(circle at 50% 30%, hsl(var(--brand-cyan) / 0.15), transparent 60%),
+      linear-gradient(180deg, hsl(240 40% 6%), hsl(240 50% 3%));
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+  .lb-id {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: hsl(var(--brand-cyan) / 0.7);
+    letter-spacing: 0.1em;
+  }
+
+  /* Hinged door — pivots on left edge */
+  .lb-door {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    transform-origin: left center;
+    transform: translateZ(var(--depth)) rotateY(0deg);
+    transition: transform 700ms var(--transition-spring);
+    border-radius: 10px;
+  }
+  .door-open .lb-door { transform: translateZ(var(--depth)) rotateY(-20deg); }
+
+  .lb-door-front, .lb-door-back {
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    backface-visibility: hidden;
+    border: 1px solid hsl(var(--border));
+  }
+  .lb-door-front {
+    background: linear-gradient(135deg, hsl(var(--brand-blue) / 0.85), hsl(var(--brand-violet) / 0.85));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.18),
+      inset 0 -10px 24px hsl(0 0% 0% / 0.35),
+      0 8px 18px -6px hsl(var(--brand-violet) / 0.55);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lb-door-back {
+    transform: rotateY(180deg);
+    background: linear-gradient(135deg, hsl(240 30% 12%), hsl(240 35% 8%));
+  }
+  .lb-door-id {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    color: hsl(var(--primary-foreground) / 0.95);
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-shadow: 0 1px 2px hsl(0 0% 0% / 0.4);
+  }
+  .lb-handle {
+    position: absolute;
+    right: 8px; top: 50%;
+    width: 4px; height: 18px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, hsl(0 0% 90%), hsl(0 0% 60%));
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.5);
+    transform: translateY(-50%);
+  }
+
+  /* Door color variants */
+  .box-state-available .lb-door-front { background: linear-gradient(135deg, hsl(190 100% 55%), hsl(220 95% 60%)); box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.2), 0 0 24px hsl(var(--brand-cyan) / 0.45); }
+  .box-state-reserved  .lb-door-front { background: linear-gradient(135deg, hsl(285 85% 65%), hsl(265 85% 55%)); }
+  .box-state-unavailable .lb-door-front { background: linear-gradient(135deg, hsl(240 15% 28%), hsl(240 15% 16%)); }
+  .box-state-mine .lb-door-front { background: linear-gradient(135deg, hsl(140 85% 55%), hsl(190 100% 60%)); box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.25), 0 0 30px hsl(140 85% 55% / 0.55); }
 
   .pulse-dot {
     width: 8px; height: 8px; border-radius: 9999px;

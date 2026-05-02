@@ -5,8 +5,6 @@ const connectMasterDB    = require("./config/masterDB")
 const { initStationDBs } = require("./config/stationDB")
 
 const app = express()
-
-// Enable CORS for all origins
 app.use(cors())
 app.use(express.json())
 
@@ -17,14 +15,24 @@ initStationDBs()
 // Initialize MQTT — connects to broker and listens to ESP32
 require("./services/mqttService")
 
-// Routes
-app.use("/api/users",       require("./routes/users"))
-app.use("/api/stations",    require("./routes/stations"))
-app.use("/api/memberships", require("./routes/memberships"))
-app.use("/api/lockers",     require("./routes/lockers"))
-app.use("/api/queue",       require("./routes/queue"))
+// Start overdue locker checker — runs every 60 seconds
+// Reads station IDs from env to know which stations to check
+const { startOverdueChecker }  = require("./utils/overdueChecker")
+const { publishCommand }       = require("./services/mqttService")
+const stationIds = process.env.STATION_DBS
+  .split(",")
+  .map((entry) => entry.split("|")[0].trim())
+startOverdueChecker(stationIds, publishCommand)
 
-// Health check — shows DB and MQTT connection status
+// Routes
+app.use("/api/users",            require("./routes/users"))
+app.use("/api/stations",         require("./routes/stations"))
+app.use("/api/memberships",      require("./routes/memberships"))
+app.use("/api/lockers",          require("./routes/lockers"))
+app.use("/api/queue",            require("./routes/queue"))
+app.use("/api/station-settings", require("./routes/stationSettings"))
+
+// Health check
 app.get("/health", (req, res) => {
   const { isMqttConnected } = require("./services/mqttService")
   const mongoose = require("mongoose")
