@@ -1,0 +1,8 @@
+PUT http://localhost:5000/api/lockers/hardware-event
+{ "station_id": "STN-001", "locker_id": "L-001", "lock_state": "unlocked", "door_state": "open" }
+
+PUT http://localhost:5000/api/lockers/hardware-event
+{ "station_id": "STN-001", "locker_id": "L-001", "lock_state": "unlocked", "door_state": "closed" }
+
+PUT http://localhost:5000/api/lockers/hardware-event
+{ "station_id": "STN-001", "locker_id": "L-001", "lock_state": "locked", "door_state": "closed" }
