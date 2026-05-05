@@ -84,60 +84,6 @@ router.post("/add", async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // GET /api/lockers/:station_id
 // ─────────────────────────────────────────────────────────
-router.get("/:station_id", async (req, res) => {
-  try {
-    const { station_id } = req.params
-    const { user_id }    = req.query
-
-    if (!user_id) {
-      return res.status(400).json({ message: "user_id is required as a query parameter" })
-    }
-
-    const member = await verifyMembership(station_id, user_id)
-    if (!member) {
-      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
-    }
-
-    const Locker  = getLockerModel(station_id)
-    const lockers = await Locker.find().select("locker_id lock_state door_state state availability last_reported_at -_id")
-
-    // Find the user's own reserved locker — returned separately as my_reservation
-    const myLockerRaw    = await Locker.findOne({ reserved_by: user_id })
-    const my_reservation = myLockerRaw ? {
-      locker_id:        myLockerRaw.locker_id,
-      lock_state:       myLockerRaw.lock_state,
-      door_state:       myLockerRaw.door_state,
-      state:            myLockerRaw.state,
-      availability:     myLockerRaw.availability,
-      last_reported_at: myLockerRaw.last_reported_at
-    } : null
-
-    res.status(200).json({
-      message:           `Lockers for station ${station_id}`,
-      total_lockers:     lockers.length,
-      available_count:   lockers.filter((l) => l.availability === "available").length,
-      reserved_count:    lockers.filter((l) => l.availability === "reserved").length,
-      unavailable_count: lockers.filter((l) => l.availability === "unavailable").length,
-      my_reservation,
-      lockers:           lockers.map((l) => ({
-        locker_id:        l.locker_id,
-        lock_state:       l.lock_state,
-        door_state:       l.door_state,
-        state:            l.state,
-        availability:     l.availability,
-        last_reported_at: l.last_reported_at
-      }))
-    })
-
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-
-// ─────────────────────────────────────────────────────────
-// POST /api/lockers/reserve
-// ─────────────────────────────────────────────────────────
 router.post("/reserve", async (req, res) => {
   try {
     const { station_id, user_id, locker_id } = req.body
@@ -960,5 +906,60 @@ router.get("/admin/overdues/:station_id", async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
+
+router.get("/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+    const { user_id }    = req.query
+
+    if (!user_id) {
+      return res.status(400).json({ message: "user_id is required as a query parameter" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker  = getLockerModel(station_id)
+    const lockers = await Locker.find().select("locker_id lock_state door_state state availability last_reported_at -_id")
+
+    // Find the user's own reserved locker — returned separately as my_reservation
+    const myLockerRaw    = await Locker.findOne({ reserved_by: user_id })
+    const my_reservation = myLockerRaw ? {
+      locker_id:        myLockerRaw.locker_id,
+      lock_state:       myLockerRaw.lock_state,
+      door_state:       myLockerRaw.door_state,
+      state:            myLockerRaw.state,
+      availability:     myLockerRaw.availability,
+      last_reported_at: myLockerRaw.last_reported_at
+    } : null
+
+    res.status(200).json({
+      message:           `Lockers for station ${station_id}`,
+      total_lockers:     lockers.length,
+      available_count:   lockers.filter((l) => l.availability === "available").length,
+      reserved_count:    lockers.filter((l) => l.availability === "reserved").length,
+      unavailable_count: lockers.filter((l) => l.availability === "unavailable").length,
+      my_reservation,
+      lockers:           lockers.map((l) => ({
+        locker_id:        l.locker_id,
+        lock_state:       l.lock_state,
+        door_state:       l.door_state,
+        state:            l.state,
+        availability:     l.availability,
+        last_reported_at: l.last_reported_at
+      }))
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// POST /api/lockers/reserve
+// ─────────────────────────────────────────────────────────
 
 module.exports = router

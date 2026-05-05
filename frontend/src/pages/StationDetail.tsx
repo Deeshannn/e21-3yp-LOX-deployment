@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, DoorClosed, DoorOpen, Lock, LockOpen, MapPin, Package, RefreshCw, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, DoorClosed, DoorOpen, Lock, LockOpen, MapPin, Package, RefreshCw, Users, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { LockerCube } from "@/components/LockerCube";
 import { ApiError, CenteredLoader } from "@/components/Status";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { Locker, QueueStatus, Station, StationLockers, api } from "@/lib/api";
+import { Locker, OverdueStatus, QueueStatus, Station, StationLockers, TimeRemaining, api } from "@/lib/api";
 import { toast } from "sonner";
 
 type QueueNotification = {
@@ -25,13 +25,15 @@ const StationDetail = () => {
   const { stationId = "" } = useParams();
   const { user, userId } = useCurrentUser();
 
-  const [station, setStation]           = useState<Station | null>(null);
-  const [data, setData]                 = useState<StationLockers | null>(null);
-  const [queue, setQueue]               = useState<QueueStatus | null>(null);
-  const [notification, setNotification] = useState<QueueNotification | null>(null);
-  const [selected, setSelected]         = useState<string | null>(null);
-  const [error, setError]               = useState<string | null>(null);
-  const [busy, setBusy]                 = useState<string | null>(null);
+  const [station,       setStation]       = useState<Station | null>(null);
+  const [data,          setData]          = useState<StationLockers | null>(null);
+  const [queue,         setQueue]         = useState<QueueStatus | null>(null);
+  const [notification,  setNotification]  = useState<QueueNotification | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<TimeRemaining | null>(null);
+  const [overdueStatus, setOverdueStatus] = useState<OverdueStatus | null>(null);
+  const [selected,      setSelected]      = useState<string | null>(null);
+  const [error,         setError]         = useState<string | null>(null);
+  const [busy,          setBusy]          = useState<string | null>(null);
 
   const myLocker: Locker | null =
     data?.my_reservation ||
@@ -41,14 +43,18 @@ const StationDetail = () => {
   const reload = useCallback(async () => {
     if (!userId) return;
     try {
-      const [d, q, n] = await Promise.all([
+      const [d, q, n, tr, od] = await Promise.all([
         api.stationLockers(stationId, userId),
         api.queueStatus(stationId, userId).catch(() => ({ in_queue: false } as QueueStatus)),
         api.queueNotification(stationId, userId).catch(() => null),
+        api.timeRemaining(stationId, userId).catch(() => null),
+        api.overdueStatus(stationId, userId).catch(() => null),
       ]);
       setData(d);
       setQueue(q);
       setNotification(n);
+      setTimeRemaining(tr);
+      setOverdueStatus(od);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -65,14 +71,14 @@ const StationDetail = () => {
 
   useEffect(() => { reload(); }, [reload]);
 
-  // Auto-select the offered locker when peek user gets a notification
+  // Auto-select offered locker when peek user gets notification
   useEffect(() => {
     if (notification?.has_notification && notification.offered_locker) {
       setSelected(notification.offered_locker);
     }
   }, [notification?.has_notification, notification?.offered_locker]);
 
-  // Poll notification every 10 seconds when user is in queue
+  // Poll notification every 10s when user is in queue
   useEffect(() => {
     if (!userId || !queue?.in_queue) return;
     const id = setInterval(async () => {
@@ -149,11 +155,34 @@ const StationDetail = () => {
     );
   }
 
+  const isPeek = notification?.has_notification === true;
+
   return (
     <AppShell>
       <Link to="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
         <ArrowLeft className="w-4 h-4 mr-1" /> Back to stations
       </Link>
+
+      {/* Overdue banner */}
+      {overdueStatus?.has_overdue && (
+        <OverdueBanner
+          status={overdueStatus}
+          stationId={stationId}
+          userId={userId}
+          onRequestSent={reload}
+        />
+      )}
+
+      {/* Time running out warning — shown when <= 10 min left */}
+      {timeRemaining?.time_limit && !timeRemaining.is_overdue && timeRemaining.minutes_remaining <= 10 && (
+        <div className="glass-card rounded-xl p-4 mb-4 border-amber-400/30 flex items-center gap-3">
+          <Clock className="w-5 h-5 text-amber-400 shrink-0" />
+          <div>
+            <span className="text-sm font-medium text-amber-400">Time running out — </span>
+            <span className="text-sm text-muted-foreground">{timeRemaining.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* Reserved banner */}
       {myLocker && (
@@ -179,9 +208,9 @@ const StationDetail = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <StatChip color="cyan"   label="Available"   value={data?.available_count ?? 0} />
-            <StatChip color="violet" label="Reserved"    value={data?.reserved_count ?? 0} />
-            <StatChip color="muted"  label="Offline"     value={data?.unavailable_count ?? 0} />
+            <StatChip color="cyan"   label="Available" value={data?.available_count ?? 0} />
+            <StatChip color="violet" label="Reserved"  value={data?.reserved_count ?? 0} />
+            <StatChip color="muted"  label="Offline"   value={data?.unavailable_count ?? 0} />
             <Button size="icon" variant="outline" onClick={reload} className="border-border bg-card/40">
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -203,15 +232,14 @@ const StationDetail = () => {
               selected={selected === l.locker_id}
               onClick={() => {
                 if (myLocker?.locker_id === l.locker_id) return;
-                // Peek queue user can click their queue_hold locker
                 const isPeekLocker =
-                  notification?.has_notification &&
-                  notification.offered_locker === l.locker_id &&
+                  isPeek &&
+                  notification!.offered_locker === l.locker_id &&
                   l.availability === "queue_hold";
                 if (!isPeekLocker && l.availability !== "available") {
                   toast.error(
                     l.availability === "queue_hold"
-                      ? `Locker ${l.locker_id} is held for the queue peek user`
+                      ? `Locker ${l.locker_id} is held for the queue`
                       : `Locker ${l.locker_id} is ${l.availability}`
                   );
                   return;
@@ -248,9 +276,12 @@ const StationDetail = () => {
   );
 };
 
+// ─────────────────────────────────────────────────────────
+// STAT CHIP
+// ─────────────────────────────────────────────────────────
 function StatChip({ color, label, value }: { color: "cyan" | "violet" | "muted"; label: string; value: number }) {
   const tone =
-    color === "cyan" ? "text-brand-cyan border-brand-cyan/40"
+    color === "cyan"   ? "text-brand-cyan border-brand-cyan/40"
     : color === "violet" ? "text-brand-purple border-brand-violet/40"
     : "text-muted-foreground border-border";
   return (
@@ -261,6 +292,74 @@ function StatChip({ color, label, value }: { color: "cyan" | "violet" | "muted";
   );
 }
 
+// ─────────────────────────────────────────────────────────
+// OVERDUE BANNER
+// ─────────────────────────────────────────────────────────
+function OverdueBanner({
+  status, stationId, userId, onRequestSent,
+}: {
+  status: OverdueStatus;
+  stationId: string;
+  userId: string;
+  onRequestSent: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const requestRelease = async () => {
+    setBusy(true);
+    try {
+      await api.requestRelease(stationId, userId);
+      toast.success("Release request sent to station admin");
+      onRequestSent();
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="relative overflow-hidden glass-card rounded-2xl p-5 mb-4 border-red-400/30 animate-fade-in">
+      <div className="absolute inset-0 bg-gradient-to-r from-red-500/8 via-red-400/5 to-amber-400/5" />
+      <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-red-400/10 border border-red-400/30 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-6 h-6 text-red-400" />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-red-400 mb-0.5">Locker overdue</div>
+            <div className="font-display text-xl font-bold">{status?.locker_id}</div>
+            <div className="text-sm text-muted-foreground mt-0.5">
+              {status?.release_requested
+                ? "Release request sent to admin — please wait for approval."
+                : "Your free time has expired. Your locker is now locked. Request admin to release it."}
+            </div>
+            {(status?.overdue_minutes ?? 0) > 0 && (
+              <div className="text-xs text-red-400/70 mt-1">
+                Overdue for {status?.overdue_minutes} minute{status?.overdue_minutes !== 1 ? "s" : ""}
+              </div>
+            )}
+          </div>
+        </div>
+        {!status?.release_requested ? (
+          <Button
+            onClick={requestRelease}
+            disabled={busy}
+            className="bg-red-500/80 hover:bg-red-500 text-white border-0 shrink-0"
+          >
+            {busy ? "Sending…" : "Request release"}
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-amber-400/30 bg-amber-400/5 shrink-0">
+            <Clock className="w-4 h-4 text-amber-400" />
+            <span className="text-sm text-amber-400">Waiting for admin</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// RESERVED BANNER
+// ─────────────────────────────────────────────────────────
 function ReservedBanner({
   locker, onRelease, onUnlock, busy,
 }: {
@@ -285,9 +384,7 @@ function ReservedBanner({
             <div className="text-xs text-muted-foreground">Last update: {new Date(locker.last_reported_at).toLocaleString()}</div>
           </div>
         </div>
-
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Status pills */}
           <StatusPill
             icon={locker.lock_state === "locked" ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
             label={`Lock: ${locker.lock_state}`}
@@ -298,12 +395,11 @@ function ReservedBanner({
             label={`Door: ${locker.door_state}`}
             active={locker.door_state === "open"}
           />
-
-          {/* Unlock symbol button — lock happens automatically via hardware after door closes */}
+          {/* Unlock button */}
           <button
             onClick={onUnlock}
             disabled={!canUnlock || busy === "unlock"}
-            title={canUnlock ? "Unlock locker" : "Unlock only available when locker is locked"}
+            title={canUnlock ? "Unlock locker" : "Only available when locker is locked"}
             className={`p-2.5 rounded-xl border transition-all ${
               canUnlock
                 ? "border-brand-cyan/40 text-brand-cyan hover:bg-brand-cyan/10 cursor-pointer"
@@ -315,8 +411,6 @@ function ReservedBanner({
               : <LockOpen className="w-5 h-5" />
             }
           </button>
-
-          {/* Release button */}
           <Button
             onClick={onRelease}
             disabled={!!busy}
@@ -327,11 +421,9 @@ function ReservedBanner({
           </Button>
         </div>
       </div>
-
-      {/* State hint */}
       <div className="relative mt-3 text-[11px] text-muted-foreground">
         {locker.state === "lock_close"   && "🔒 Locker is locked — press unlock to open it"}
-        {locker.state === "unlock_close" && "🔓 Door is closed — open the door, it will auto-lock when you close it"}
+        {locker.state === "unlock_close" && "🔓 Door closed — open the door, it will auto-lock when you close it"}
         {locker.state === "unlock_open"  && "🚪 Door is open — close the door to auto-lock"}
         {locker.state === "fault"        && "⚠️ Hardware fault detected"}
       </div>
@@ -339,6 +431,9 @@ function ReservedBanner({
   );
 }
 
+// ─────────────────────────────────────────────────────────
+// STATUS PILL
+// ─────────────────────────────────────────────────────────
 function StatusPill({ icon, label, active }: { icon: React.ReactNode; label: string; active: boolean }) {
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border
@@ -348,6 +443,9 @@ function StatusPill({ icon, label, active }: { icon: React.ReactNode; label: str
   );
 }
 
+// ─────────────────────────────────────────────────────────
+// SMART QUEUE
+// ─────────────────────────────────────────────────────────
 function SmartQueue({
   queue, notification, onJoin, onLeave, busy, disabled,
 }: {
@@ -360,7 +458,6 @@ function SmartQueue({
 }) {
   const [countdown, setCountdown] = useState<{ m: number; s: number } | null>(null);
 
-  // Live countdown — ticks every second when peek user has an active offer
   useEffect(() => {
     if (!notification?.has_notification || !notification.offer_expires_at) {
       setCountdown(null);
@@ -402,22 +499,18 @@ function SmartQueue({
           {queue?.in_queue ? (
             <>
               {isPeek && countdown ? (
-                /* Peek user — show offered locker + live countdown */
                 <div className="flex flex-col items-center gap-1 min-w-[120px]">
                   <div className="text-[10px] uppercase tracking-widest text-amber-400 font-mono">Locker offered</div>
                   <div className="font-display text-3xl font-bold text-amber-400">{notification!.offered_locker}</div>
                   <div className="flex items-center gap-1.5 mt-1">
                     <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className={`font-mono font-bold text-xl tabular-nums ${
-                      countdown.m === 0 ? "text-red-400" : "text-amber-400"
-                    }`}>
+                    <span className={`font-mono font-bold text-xl tabular-nums ${countdown.m === 0 ? "text-red-400" : "text-amber-400"}`}>
                       {String(countdown.m).padStart(2, "0")}:{String(countdown.s).padStart(2, "0")}
                     </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground mt-0.5">remaining</div>
                 </div>
               ) : (
-                /* Waiting user — show queue position */
                 <div className="text-center min-w-[80px]">
                   <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Position</div>
                   <div className="font-display text-4xl font-bold text-gradient-brand">

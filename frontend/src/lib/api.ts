@@ -1,7 +1,3 @@
-// Centralized API client for the SmartLocker backend.
-// Base URL is overridable via Vite env: VITE_API_BASE_URL
-// Defaults to http://localhost:5000/api so dev works out of the box.
-
 const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "")
   || "http://localhost:5000/api";
 
@@ -33,7 +29,7 @@ export type Locker = {
   lock_state: "locked" | "unlocked";
   door_state: "open" | "closed";
   state: string;
-  availability: "available" | "reserved" | "unavailable";
+  availability: "available" | "reserved" | "unavailable" | "queue_hold" | "overdue";
   last_reported_at: string;
   reserved_by?: string | null;
 };
@@ -62,6 +58,68 @@ export type QueueStatus = {
   joined_at?: string;
 };
 
+export type QueueEntry = {
+  position: number;
+  user_id: string;
+  user: { id: string; name: string; email: string };
+  status: "waiting" | "notified";
+  joined_at: string;
+  minutes_in_queue: number;
+  offered_locker: string | null;
+  offer_expires_at: string | null;
+  seconds_remaining: number | null;
+};
+
+export type AdminQueueDetails = {
+  station_id: string;
+  total: number;
+  waiting: number;
+  notified: number;
+  max_size: number;
+  queue_full: boolean;
+  entries: QueueEntry[];
+};
+
+export type OverdueLocker = {
+  locker_id: string;
+  state: string;
+  user: { id: string; name: string; email: string };
+  reserved_at: string;
+  overdue_at: string;
+  overdue_minutes: number;
+  release_requested: boolean;
+  release_requested_at: string | null;
+};
+
+export type StationSettings = {
+  station_id: string;
+  free_minutes: number;
+  free_time: string;
+  updated_at: string;
+};
+
+export type TimeRemaining = {
+  locker_id: string;
+  time_limit: boolean;
+  is_overdue: boolean;
+  minutes_remaining: number;
+  seconds_remaining: number;
+  expires_at?: string;
+  free_minutes: number;
+  message: string;
+};
+
+export type OverdueStatus = {
+  has_overdue: boolean;
+  locker_id?: string;
+  availability?: string;
+  overdue_at?: string;
+  overdue_minutes?: number;
+  release_requested?: boolean;
+  release_requested_at?: string;
+  message: string;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${BASE}${path}`;
   let res: Response;
@@ -79,7 +137,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       `Network error reaching ${url}. Is your backend running and CORS-enabled? (${(e as Error).message})`
     );
   }
-
   const text = await res.text();
   const data = text ? safeJSON(text) : null;
   if (!res.ok) {
@@ -96,19 +153,21 @@ function safeJSON(s: string) {
 export const api = {
   base: BASE,
 
-  // ---- Users ----
-  listUsers: () => request<{ users: RawUser[] } | RawUser[]>(`/users`)
-    .then(r => (Array.isArray(r) ? r : r.users).map(normalizeUser)),
+  // ── Users ──────────────────────────────────────────────
+  listUsers: () =>
+    request<{ users: RawUser[] } | RawUser[]>(`/users`)
+      .then(r => (Array.isArray(r) ? r : r.users).map(normalizeUser)),
 
-  // ---- Stations ----
-  listStations: () => request<{ stations: Station[] } | Station[]>(`/stations`)
-    .then(r => Array.isArray(r) ? r : r.stations),
+  // ── Stations ───────────────────────────────────────────
+  listStations: () =>
+    request<{ stations: Station[] } | Station[]>(`/stations`)
+      .then(r => Array.isArray(r) ? r : r.stations),
 
+  // ── Memberships ────────────────────────────────────────
   getMyMembershipStatus: (user_id: string, station_id: string) =>
     request<{ status: MembershipStatus }>(`/memberships/status/${station_id}?user_id=${user_id}`)
       .catch(() => ({ status: "none" as MembershipStatus })),
 
-  // ---- Memberships ----
   requestMembership: (user_id: string, station_id: string) =>
     request<{ membership_id: string; status: string }>(`/memberships/request`, {
       method: "POST",
@@ -119,21 +178,19 @@ export const api = {
     request<{ requests: PendingRequest[] }>(`/memberships/pending/${station_id}`)
       .then(r => r.requests),
 
-  // Backend uses PUT
   acceptMembership: (membership_id: string) =>
     request<{ ok: boolean }>(`/memberships/accept`, {
       method: "PUT",
       body: JSON.stringify({ membership_id }),
     }),
 
-  // Backend uses POST
   ignoreMembership: (membership_id: string) =>
     request<{ ok: boolean }>(`/memberships/ignore`, {
       method: "POST",
       body: JSON.stringify({ membership_id }),
     }),
 
-  // ---- Lockers ----
+  // ── Lockers ────────────────────────────────────────────
   stationLockers: (station_id: string, user_id: string) =>
     request<StationLockers>(`/lockers/${station_id}?user_id=${user_id}`),
 
@@ -143,21 +200,51 @@ export const api = {
       body: JSON.stringify({ station_id, user_id, locker_id }),
     }),
 
-  // Backend uses PUT
   releaseLocker: (station_id: string, user_id: string, locker_id: string) =>
     request<{ ok: boolean }>(`/lockers/release`, {
       method: "PUT",
       body: JSON.stringify({ station_id, user_id, locker_id }),
     }),
 
-  // ---- Queue ----
+  unlockLocker: (station_id: string, user_id: string, locker_id: string) =>
+    request<{ ok: boolean }>(`/lockers/unlock`, {
+      method: "POST",
+      body: JSON.stringify({ station_id, user_id, locker_id }),
+    }),
+
+  timeRemaining: (station_id: string, user_id: string) =>
+    request<TimeRemaining>(`/lockers/time-remaining/${station_id}?user_id=${user_id}`)
+      .catch(() => null),
+
+  overdueStatus: (station_id: string, user_id: string) =>
+    request<OverdueStatus>(`/lockers/overdue-status/${station_id}?user_id=${user_id}`)
+      .catch(() => null),
+
+  requestRelease: (station_id: string, user_id: string) =>
+    request<{ ok: boolean }>(`/lockers/request-release`, {
+      method: "POST",
+      body: JSON.stringify({ station_id, user_id }),
+    }),
+
+  // Admin — overdue lockers
+  adminOverdues: (station_id: string) =>
+    request<{ total_overdue: number; pending_requests: number; overdues: OverdueLocker[] }>(
+      `/lockers/admin/overdues/${station_id}`
+    ),
+
+  adminRelease: (station_id: string, locker_id: string) =>
+    request<{ ok: boolean }>(`/lockers/admin-release`, {
+      method: "POST",
+      body: JSON.stringify({ station_id, locker_id }),
+    }),
+
+  // ── Queue ──────────────────────────────────────────────
   joinQueue: (station_id: string, user_id: string) =>
     request<{ ok: boolean }>(`/queue/join`, {
       method: "POST",
       body: JSON.stringify({ station_id, user_id }),
     }),
 
-  // Backend uses DELETE
   leaveQueue: (station_id: string, user_id: string) =>
     request<{ ok: boolean }>(`/queue/leave`, {
       method: "DELETE",
@@ -167,13 +254,6 @@ export const api = {
   queueStatus: (station_id: string, user_id: string) =>
     request<QueueStatus>(`/queue/status/${station_id}?user_id=${user_id}`),
 
-  unlockLocker: (station_id: string, user_id: string, locker_id: string) =>
-    request<{ ok: boolean }>(`/lockers/unlock`, {
-      method: "POST",
-      body: JSON.stringify({ station_id, user_id, locker_id }),
-    }),
-
-  // Check if user has an active locker offer from queue (peek user only)
   queueNotification: (station_id: string, user_id: string) =>
     request<{
       has_notification: boolean;
@@ -186,4 +266,24 @@ export const api = {
       queue_size?: number;
       message: string;
     }>(`/queue/notification/${station_id}?user_id=${user_id}`),
+
+  // Admin — queue details
+  adminQueueDetails: (station_id: string) =>
+    request<AdminQueueDetails>(`/queue/admin/${station_id}`),
+
+  // Manually trigger overdue check for a station
+  checkOverdue: (station_id: string) =>
+    request<{ overdue_found: number }>(`/station-settings/${station_id}/check-overdue`, {
+      method: "POST",
+    }),
+
+  // ── Station Settings ───────────────────────────────────
+  getStationSettings: (station_id: string) =>
+    request<StationSettings>(`/station-settings/${station_id}`),
+
+  updateStationSettings: (station_id: string, free_minutes: number) =>
+    request<StationSettings>(`/station-settings/${station_id}`, {
+      method: "PUT",
+      body: JSON.stringify({ free_minutes }),
+    }),
 };

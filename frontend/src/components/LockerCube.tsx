@@ -9,19 +9,24 @@ type Props = {
 };
 
 export function LockerCube({ locker, isMine, onClick, selected }: Props) {
-  const stateClass = isMine
-    ? "box-state-mine"
-    : locker.availability === "available"
-    ? "box-state-available"
-    : locker.availability === "reserved"
-    ? "box-state-reserved"
-    : "box-state-unavailable";
+  const isOverdue = locker.availability === "overdue";
+
+  // Overdue always wins — even if it's the user's own locker
+  const stateClass =
+    isOverdue                              ? "box-state-overdue"
+    : isMine                               ? "box-state-mine"
+    : locker.availability === "available"  ? "box-state-available"
+    : locker.availability === "reserved"   ? "box-state-reserved"
+    : locker.availability === "queue_hold" ? "box-state-unavailable"
+    :                                        "box-state-unavailable";
 
   const label =
-    isMine ? "Yours"
-      : locker.availability === "available" ? "Available"
-      : locker.availability === "reserved" ? "Reserved"
-      : "Unavailable";
+    isOverdue                              ? "Overdue"
+    : isMine                               ? "Yours"
+    : locker.availability === "available"  ? "Available"
+    : locker.availability === "reserved"   ? "Reserved"
+    : locker.availability === "queue_hold" ? "Held"
+    :                                        "Unavailable";
 
   const doorOpen = locker.door_state === "open";
 
@@ -30,7 +35,9 @@ export function LockerCube({ locker, isMine, onClick, selected }: Props) {
       type="button"
       onClick={onClick}
       className={`group relative text-left rounded-xl p-2.5 transition-all duration-300
-        ${selected ? "ring-2 ring-brand-cyan glow-blue" : "ring-1 ring-border hover:ring-brand-violet"}
+        ${selected
+          ? "ring-2 ring-brand-cyan glow-blue"
+          : "ring-1 ring-border hover:ring-brand-violet"}
         bg-card/40 backdrop-blur-md`}
     >
       <div className="locker-stage">
@@ -41,7 +48,7 @@ export function LockerCube({ locker, isMine, onClick, selected }: Props) {
           <div className="lb-face lb-right" />
           <div className="lb-face lb-top" />
           <div className="lb-face lb-bottom" />
-          {/* Interior (visible when door opens) */}
+          {/* Interior */}
           <div className="lb-interior">
             <span className="lb-id">{locker.locker_id}</span>
           </div>
@@ -59,10 +66,11 @@ export function LockerCube({ locker, isMine, onClick, selected }: Props) {
       <div className="mt-2.5 flex items-center justify-between">
         <span
           className={`text-[10px] uppercase tracking-widest font-semibold
-            ${isMine ? "text-emerald-300"
-              : locker.availability === "available" ? "text-brand-cyan"
-              : locker.availability === "reserved" ? "text-brand-purple"
-              : "text-muted-foreground"}`}
+            ${isOverdue                            ? "text-red-400"
+            : isMine                               ? "text-emerald-300"
+            : locker.availability === "available"  ? "text-brand-cyan"
+            : locker.availability === "reserved"   ? "text-brand-purple"
+            : "text-muted-foreground"}`}
         >
           {label}
         </span>
