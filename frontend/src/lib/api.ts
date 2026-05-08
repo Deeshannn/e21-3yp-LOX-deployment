@@ -226,6 +226,10 @@ export const api = {
       body: JSON.stringify({ station_id, user_id }),
     }),
 
+  // Admin — all lockers for a station (no user_id needed)
+  adminLockers: (station_id: string) =>
+    request<Locker[]>(`/lockers/admin/all/${station_id}`),
+
   // Admin — overdue lockers
   adminOverdues: (station_id: string) =>
     request<{ total_overdue: number; pending_requests: number; overdues: OverdueLocker[] }>(

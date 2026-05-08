@@ -845,6 +845,32 @@ router.post("/request-release", async (req, res) => {
 })
 
 
+
+// ─────────────────────────────────────────────────────────
+// GET /api/lockers/admin/all/:station_id
+// Admin view — all lockers with full state, no user_id needed
+// ─────────────────────────────────────────────────────────
+router.get("/admin/all/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+    const Locker  = getLockerModel(station_id)
+    const lockers = await Locker.find().select("locker_id lock_state door_state state availability last_reported_at -_id")
+
+    res.status(200).json(
+      lockers.map((l) => ({
+        locker_id:        l.locker_id,
+        lock_state:       l.lock_state,
+        door_state:       l.door_state,
+        state:            l.state,
+        availability:     l.availability,
+        last_reported_at: l.last_reported_at
+      }))
+    )
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
 // ─────────────────────────────────────────────────────────
 // GET /api/lockers/admin/overdues/:station_id
 // Admin view — all overdue lockers with user details

@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { ApiError, CenteredLoader } from "@/components/Status";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  AdminQueueDetails, OverdueLocker, PendingRequest,
+  AdminQueueDetails, Locker, OverdueLocker, PendingRequest,
   Station, StationSettings, api
 } from "@/lib/api";
 import {
-  AlertTriangle, Check, Clock, Mail, Package,
+  AlertTriangle, Check, Clock, Grid3x3, Mail, Package,
   RefreshCw, Settings, ShieldCheck, Users, X
 } from "lucide-react";
 import { toast } from "sonner";
@@ -392,6 +392,7 @@ function OverduesTab({ stationId }: { stationId: string }) {
 // ─────────────────────────────────────────────────────────
 function SettingsTab({ stationId }: { stationId: string }) {
   const [settings, setSettings] = useState<StationSettings | null>(null);
+  const [lockers,  setLockers]  = useState<Locker[] | null>(null);
   const [input,    setInput]    = useState<string>("");
   const [busy,     setBusy]     = useState(false);
   const [error,    setError]    = useState<string | null>(null);
@@ -405,7 +406,16 @@ function SettingsTab({ stationId }: { stationId: string }) {
     } catch (e) { setError((e as Error).message); }
   }, [stationId]);
 
-  useEffect(() => { load(); }, [load]);
+  // Load lockers using a dummy admin user — admin sees all lockers
+  // We use the raw endpoint directly since admin has no user_id context here
+  const loadLockers = useCallback(async () => {
+    try {
+      const r = await api.adminLockers(stationId);
+      setLockers(r);
+    } catch { setLockers([]); }
+  }, [stationId]);
+
+  useEffect(() => { load(); loadLockers(); }, [load, loadLockers]);
 
   const save = async () => {
     const mins = parseInt(input, 10);
@@ -426,31 +436,29 @@ function SettingsTab({ stationId }: { stationId: string }) {
   if (!settings) return <CenteredLoader label="Loading settings…" />;
 
   return (
-    <div className="space-y-6 max-w-lg">
-      <div className="glass-card rounded-2xl p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex items-center justify-center">
-            <Clock className="w-5 h-5 text-brand-cyan" />
-          </div>
-          <div>
-            <div className="font-display font-semibold">Locker time limit</div>
-            <div className="text-xs text-muted-foreground">How long a user can keep a locker before it becomes overdue</div>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="grid md:grid-cols-2 gap-6 items-start">
 
-        {/* Current value display */}
-        <div className="mb-5 p-4 rounded-xl bg-muted/20 border border-border">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Current setting</div>
-          <div className="font-display text-2xl font-bold text-brand-cyan">
-            {settings.free_time}
+        {/* Time limit setting card */}
+        <div className="glass-card rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-brand-cyan" />
+            </div>
+            <div>
+              <div className="font-display font-semibold">Locker time limit</div>
+              <div className="text-xs text-muted-foreground">How long a user can keep a locker before it becomes overdue</div>
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Last updated: {new Date(settings.updated_at).toLocaleString()}
-          </div>
-        </div>
 
-        {/* Input */}
-        <div className="flex gap-3">
+          <div className="mb-5 p-4 rounded-xl bg-muted/20 border border-border">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Current setting</div>
+            <div className="font-display text-2xl font-bold text-brand-cyan">{settings.free_time}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Last updated: {new Date(settings.updated_at).toLocaleString()}
+            </div>
+          </div>
+
           <div className="flex-1">
             <div className="text-xs text-muted-foreground mb-1.5">New value (minutes)</div>
             <div className="flex items-center gap-2">
@@ -468,15 +476,80 @@ function SettingsTab({ stationId }: { stationId: string }) {
               Set to <span className="text-foreground font-mono">0</span> to remove the time limit entirely
             </div>
           </div>
+
+          <Button onClick={save} disabled={busy} className="mt-4 w-full bg-gradient-brand text-primary-foreground border-0">
+            {busy ? "Saving…" : "Save setting"}
+          </Button>
         </div>
 
-        <Button
-          onClick={save}
-          disabled={busy}
-          className="mt-4 w-full bg-gradient-brand text-primary-foreground border-0"
-        >
-          {busy ? "Saving…" : "Save setting"}
-        </Button>
+        {/* Locker grid card */}
+        <div className="glass-card rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-brand-violet/10 border border-brand-violet/20 flex items-center justify-center">
+                <Grid3x3 className="w-5 h-5 text-brand-violet" />
+              </div>
+              <div>
+                <div className="font-display font-semibold">Locker status</div>
+                <div className="text-xs text-muted-foreground">{lockers?.length ?? 0} lockers at this station</div>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={loadLockers} className="border-border">
+              <RefreshCw className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+
+          {!lockers ? (
+            <CenteredLoader label="Loading lockers…" />
+          ) : lockers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No lockers found</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {lockers.map(l => {
+                const color =
+                  l.availability === "available"  ? "border-brand-cyan/40  bg-brand-cyan/5  text-brand-cyan"
+                  : l.availability === "reserved"   ? "border-brand-violet/40 bg-brand-violet/5 text-brand-purple"
+                  : l.availability === "overdue"    ? "border-red-500/40     bg-red-500/5     text-red-400"
+                  : l.availability === "queue_hold" ? "border-amber-400/40   bg-amber-400/5   text-amber-400"
+                  :                                   "border-border         bg-muted/20      text-muted-foreground";
+
+                const stateLabel =
+                  l.availability === "available"  ? "Free"
+                  : l.availability === "reserved"   ? "In use"
+                  : l.availability === "overdue"    ? "Overdue"
+                  : l.availability === "queue_hold" ? "Held"
+                  : l.state === "offline"           ? "Offline"
+                  : l.state === "fault"             ? "Fault"
+                  :                                   "Busy";
+
+                return (
+                  <div
+                    key={l.locker_id}
+                    className={`rounded-xl border p-3 flex flex-col gap-1 ${color}`}
+                  >
+                    <span className="font-mono font-bold text-sm leading-none">{l.locker_id}</span>
+                    <span className="text-[10px] uppercase tracking-widest opacity-80">{stateLabel}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Legend */}
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1">
+            {[
+              { color: "text-brand-cyan",   label: "Free" },
+              { color: "text-brand-purple", label: "In use" },
+              { color: "text-amber-400",    label: "Held" },
+              { color: "text-red-400",      label: "Overdue" },
+              { color: "text-muted-foreground", label: "Offline/Busy" },
+            ].map(({ color, label }) => (
+              <span key={label} className={`text-[10px] flex items-center gap-1 ${color}`}>
+                <span className="w-2 h-2 rounded-sm bg-current opacity-60" /> {label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
