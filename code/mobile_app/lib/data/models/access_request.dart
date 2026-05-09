@@ -24,7 +24,10 @@ class AccessRequest {
     String stationId = '';
     String stationName = '';
     if (stationData is Map<String, dynamic>) {
-      stationId = stationData['_id']?.toString() ?? '';
+      stationId =
+          stationData['station_id']?.toString() ??
+          stationData['_id']?.toString() ??
+          '';
       stationName = stationData['name']?.toString() ?? '';
     } else {
       stationId = stationData?.toString() ?? '';
