@@ -257,4 +257,31 @@ class ApiClient {
       rethrow;
     }
   }
+
+  /// Reserve a locker for the current user at a station.
+  /// Sends an instant reservation request to the backend.
+  /// Parameters: stationId, lockerId (the locker_id from backend)
+  Future<Locker> reserveLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Reserving locker: $lockerId at station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/lockers/reserve',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+          'locker_id': lockerId,
+        },
+      );
+      debugPrint('✅ Locker reserved successfully');
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error reserving locker: $e');
+      rethrow;
+    }
+  }
 }

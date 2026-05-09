@@ -28,6 +28,7 @@ class _StationLockersScreenState extends State<StationLockersScreen> {
   bool _loading = true;
   String? _error;
   String _filterType = 'all'; // 'all', 'free', 'busy'
+  bool _reserving = false; // Track reservation in progress
 
   @override
   void initState() {
@@ -58,6 +59,69 @@ class _StationLockersScreenState extends State<StationLockersScreen> {
         _error = error.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _reserveLocker(Locker locker) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Reservation'),
+        content: Text('Reserve locker ${locker.code}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reserve'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Show loading state
+    if (!mounted) return;
+    setState(() => _reserving = true);
+
+    try {
+      debugPrint('🔒 Attempting to reserve locker: ${locker.code}');
+      await widget.client.reserveLocker(
+        stationId: widget.station.id,
+        lockerId: locker.id,
+      );
+
+      if (!mounted) return;
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Locker ${locker.code} reserved! Access granted.'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Refresh the locker list
+      await _loadLockers();
+    } catch (error) {
+      if (!mounted) return;
+
+      debugPrint('❌ Reservation failed: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to reserve locker: $error'),
+          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.red,
+        ),
+      );
+
+      setState(() => _reserving = false);
     }
   }
 
@@ -317,15 +381,8 @@ class _StationLockersScreenState extends State<StationLockersScreen> {
     final borderColor = isAvailable ? Colors.green.shade300 : Colors.grey.shade400;
 
     return GestureDetector(
-      onTap: isAvailable
-          ? () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Selected locker: ${locker.code}'),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-            }
+      onTap: (isAvailable && !_reserving)
+          ? () => _reserveLocker(locker)
           : null,
       child: Container(
         decoration: BoxDecoration(
