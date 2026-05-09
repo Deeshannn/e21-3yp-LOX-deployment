@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../core/errors/api_error.dart';
@@ -10,18 +11,22 @@ import '../models/locker.dart';
 import '../models/station.dart';
 import '../models/user_profile.dart';
 
-
 /// A simple API client to interact with the backend server.
 /// This class abstracts away the details of making HTTP requests, handling authentication, and parsing responses.
 /// It provides methods for logging in, registering, fetching user data, and interacting with stations and lockers.
 
 class ApiClient {
-  // Inputs: baseUrl (API base URL) and token (JWT auth token).
-  // Both are required to create an instance of ApiClient.
-  const ApiClient({required this.baseUrl, required this.token});
+  // Inputs: baseUrl (API base URL), token (JWT auth token), and optional userId for authenticated endpoints.
+  // baseUrl and token are required; userId is optional but needed for some endpoints.
+  const ApiClient({
+    required this.baseUrl,
+    required this.token,
+    this.userId = '',
+  });
 
   final String baseUrl;
   final String token;
+  final String userId;
 
   // Internal helper to make HTTP requests with consistent error handling and auth.
   // Inputs: method (GET/POST), path (endpoint), optional body for POST, and whether to include auth header.
@@ -60,8 +65,22 @@ class ApiClient {
       );
     }
 
-    final payload =
-        jsonDecode(response.body) as Map<String, dynamic>? ?? const {};
+    // Debug: Log raw response
+    debugPrint('🔍 API Response Status: ${response.statusCode}');
+    debugPrint('🔍 API Response Body: ${response.body}');
+    debugPrint('🔍 API Request: $method $uri');
+
+    Map<String, dynamic> payload;
+    try {
+      payload = jsonDecode(response.body) as Map<String, dynamic>? ?? const {};
+    } on FormatException catch (e) {
+      debugPrint('❌ JSON Parse Error: $e');
+      debugPrint(
+        '❌ Response body (first 500 chars): ${response.body.substring(0, response.body.length > 500 ? 500 : response.body.length)}',
+      );
+      rethrow;
+    }
+
     if (response.statusCode >= 400) {
       throw ApiError(
         payload['message']?.toString() ??
@@ -78,7 +97,7 @@ class ApiClient {
   }) async {
     final payload = await _request(
       'POST',
-      '/auth/login',
+      '/api/users/login',
       includeAuth: false,
       body: {'email': email, 'password': password},
     );
@@ -101,73 +120,141 @@ class ApiClient {
     required String password,
     String stationCode = '',
   }) async {
-    final payload = await _request(
+    // First, register the user
+    await _request(
       'POST',
-      '/auth/register',
+      '/api/users/add',
       includeAuth: false,
-      body: {
-        'name': name,
-        'email': email,
-        'password': password,
-        'stationCode': stationCode,
-      },
+      body: {'name': name, 'email': email, 'password': password},
     );
 
-    final tkn = payload['token']?.toString() ?? '';
-    if (tkn.isEmpty) throw const ApiError('Registration failed: missing token');
-
-    return AuthResult(
-      baseUrl: baseUrl,
-      token: tkn,
-      user: UserProfile.fromJson(
-        payload['user'] as Map<String, dynamic>? ?? const {},
-      ),
-    );
+    // After successful registration, immediately login to get the token
+    return login(email: email, password: password);
   }
 
-  /// Call GET request to /auth/me to fetch the current user's profile using the stored token.
+  /// Call GET request to /api/users/me to fetch the current user's profile using the stored token.
   Future<UserProfile> fetchMe() async {
-    final payload = await _request('GET', '/auth/me');
-    return UserProfile.fromJson(
-      payload['user'] as Map<String, dynamic>? ?? const {},
-    );
+    debugPrint('📡 Fetching user profile...');
+    try {
+      final payload = await _request('GET', '/api/users/me');
+      debugPrint('✅ User profile fetched');
+      return UserProfile.fromJson(
+        payload['user'] as Map<String, dynamic>? ?? const {},
+      );
+    } catch (e) {
+      debugPrint('❌ Error fetching user profile: $e');
+      rethrow;
+    }
   }
 
   Future<List<Station>> fetchStations() async {
-    final payload = await _request('GET', '/stations/all');
-    final data = payload['stations'] as List<dynamic>? ?? const [];
-    return data
-        .map((item) => Station.fromJson(item as Map<String, dynamic>))
-        .toList();
+    debugPrint('📡 Fetching stations...');
+    try {
+      final payload = await _request('GET', '/api/stations/');
+      final data = payload['stations'] as List<dynamic>? ?? const [];
+      debugPrint('✅ Fetched ${data.length} stations');
+      return data
+          .map((item) => Station.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('❌ Error fetching stations: $e');
+      rethrow;
+    }
   }
 
   Future<List<Locker>> fetchLockers(String stationId) async {
-    final payload = await _request('GET', '/lockers?stationId=$stationId');
-    final data = payload['lockers'] as List<dynamic>? ?? const [];
-    return data
-        .map((item) => Locker.fromJson(item as Map<String, dynamic>))
-        .toList();
+    debugPrint('📡 Fetching lockers for station: $stationId');
+    try {
+      final query = userId.isNotEmpty ? '?user_id=$userId' : '';
+      final payload = await _request('GET', '/api/lockers/$stationId$query');
+      final data = payload['lockers'] as List<dynamic>? ?? const [];
+      debugPrint('✅ Fetched ${data.length} lockers for station $stationId');
+      return data
+          .map((item) => Locker.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('❌ Error fetching lockers for $stationId: $e');
+      rethrow;
+    }
   }
 
   Future<List<AccessRequest>> fetchRequests() async {
-    final payload = await _request('GET', '/requests');
-    final data = payload['requests'] as List<dynamic>? ?? const [];
-    return data
-        .map((item) => AccessRequest.fromJson(item as Map<String, dynamic>))
-        .toList();
+    debugPrint('📡 Fetching access requests...');
+    try {
+      final payload = await _request('GET', '/requests');
+      final data = payload['requests'] as List<dynamic>? ?? const [];
+      debugPrint('✅ Fetched ${data.length} access requests');
+      return data
+          .map((item) => AccessRequest.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('❌ Error fetching requests: $e');
+      rethrow;
+    }
   }
 
   Future<AccessRequest> createLockerRequest(
     String stationId,
     String note,
   ) async {
-    final payload = await _request(
-      'POST',
-      '/requests/access',
-      body: {'stationId': stationId, 'note': note},
-    );
-    return AccessRequest.fromJson(
-      payload['request'] as Map<String, dynamic>? ?? const {},
-    );
+    debugPrint('📡 Creating access request for station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/requests/access',
+        body: {'stationId': stationId, 'note': note},
+      );
+      debugPrint('✅ Access request created');
+      return AccessRequest.fromJson(
+        payload['request'] as Map<String, dynamic>? ?? const {},
+      );
+    } catch (e) {
+      debugPrint('❌ Error creating access request: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch membership status for the current user at [stationId].
+  /// Returns a string: 'none' | 'pending' | 'member'
+  Future<String> fetchMembershipStatus(String stationId) async {
+    debugPrint('📡 Fetching membership status for $stationId');
+    try {
+      if (stationId.isEmpty) {
+        throw const ApiError(
+          'Missing station ID for membership status request',
+        );
+      }
+      final query = userId.isNotEmpty ? '?user_id=$userId' : '';
+      final payload = await _request(
+        'GET',
+        '/api/memberships/status/$stationId$query',
+      );
+      final status = payload['status']?.toString() ?? 'none';
+      debugPrint('✅ Membership status: $status');
+      return status;
+    } catch (e) {
+      debugPrint('❌ Error fetching membership status: $e');
+      rethrow;
+    }
+  }
+
+  /// Create a membership request for the current user at [stationId].
+  Future<Map<String, dynamic>> createMembershipRequest(String stationId) async {
+    debugPrint('📡 Creating membership request for $stationId');
+    try {
+      if (stationId.isEmpty) {
+        throw const ApiError('Missing station ID for membership request');
+      }
+      final payload = await _request(
+        'POST',
+        '/api/memberships/request',
+        body: {'user_id': userId, 'station_id': stationId},
+      );
+      debugPrint('✅ Membership request created');
+      return payload;
+    } catch (e) {
+      debugPrint('❌ Error creating membership request: $e');
+      rethrow;
+    }
   }
 }
