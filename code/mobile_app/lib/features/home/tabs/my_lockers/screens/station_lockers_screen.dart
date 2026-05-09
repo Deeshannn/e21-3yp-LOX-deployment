@@ -41,11 +41,9 @@ class _StationLockersScreenState extends State<StationLockersScreen> {
       _error = null;
     });
     try {
-      debugPrint('📡 Loading lockers for stationn: ${widget.station.id}');
+      debugPrint('📡 Loading lockers for station: ${widget.station.id}');
       debugPrint('Station name: ${widget.station.name}');
-      debugPrint('Station code: ${widget.station.code}');
-      debugPrint('Station location: ${widget.station.latitude}, ${widget.station.longitude}');
-      // debugPrint('Station Address: ${widget.station.address}, ${widget.station.city}, ${widget.station.district}');
+      debugPrint('Station Location: ${widget.station.locationSummary}');
       final lockers = await widget.client.fetchLockers(widget.station.id);
       debugPrint('✅ Loaded ${lockers.length} lockers');
       if (!mounted) return;
@@ -174,14 +172,14 @@ class _StationLockersScreenState extends State<StationLockersScreen> {
                       const SizedBox(width: 4),
                       
                       Expanded(
-                        child: Text(
-                          'Location: ${widget.station.toString()}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade600,
-                            letterSpacing: 0.3,
-                          ),
+                      child: Text(
+                        'Location: ${widget.station.locationSummary}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          letterSpacing: 0.3,
                         ),
+                      ),
                       ),
                     ],
                   ),
