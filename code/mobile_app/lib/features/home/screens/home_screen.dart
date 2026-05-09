@@ -6,6 +6,7 @@ import '../../../data/models/session_data.dart';
 import '../../../data/models/station.dart';
 import '../tabs/account/screens/account_screen.dart';
 import '../tabs/my_lockers/screens/requests_screen.dart';
+import '../tabs/my_lockers/screens/my_lockers_screen.dart';
 import '../tabs/explore/screens/explore_screen.dart';
 
 /// The primary shell screen for authenticated users.
@@ -203,6 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onRefresh: _loadData,
             client: widget.session.client,
           ),
+          const MyLockersScreen(),
           AccountScreen(user: widget.session.user, onLogout: widget.onLogout),
         ],
       ),
@@ -217,6 +219,10 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.bookmark_outline),
             label: 'Bookings',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.lock_outline),
+            label: 'My Lockers',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
