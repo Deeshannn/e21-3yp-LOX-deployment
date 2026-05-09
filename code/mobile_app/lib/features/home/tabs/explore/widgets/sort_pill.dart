@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import '../screens/explore_screen.dart';
+
+/// Local enum for sort options. Kept here to avoid coupling to the parent screen
+/// so the widget can be reused independently.
+enum HomeStationSort { distance, availability }
 
 
 /// A custom segmented control widget that allows the user to toggle between different sorting strategies for the stations list.

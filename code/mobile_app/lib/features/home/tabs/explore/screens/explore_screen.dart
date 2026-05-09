@@ -2,49 +2,39 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
-import '../../../../../data/models/access_request.dart';
-import '../../../../../data/models/locker.dart';
 import '../../../../../data/models/station.dart';
+import '../../../../../data/remote/api_client.dart';
 import '../widgets/location_pill.dart';
-import '../widgets/sort_pill.dart';
+import '../widgets/membership_request_modal.dart';
 import '../widgets/station_card.dart';
 
-/// Defines the available sorting strategies for the stations list.
-enum HomeStationSort { distance, availability }
-
-/// A core UI component that displays a scrollable, sortable list of locker stations.
+/// A core UI component that displays a scrollable list of locker stations.
 ///
-/// This view allows users to detect their current location, sort nearby stations
-/// by distance or locker availability, and navigate to a specific station's details.
+/// Sorting is performed by distance by default; availability-based filtering
+/// has been removed per product change.
 
 class StationsView extends StatefulWidget {
   const StationsView({
     super.key,
     required this.stations,
-    required this.lockersByStation,
     required this.locationDraft,
     required this.savedLocation,
     required this.savingLocation,
     required this.onLocationChanged,
     required this.onSaveLocation,
-    required this.activeRequestForStation,
-    required this.freeCountForStation,
-    required this.onOpenStation,
+    required this.client,
     required this.onRefresh,
   });
 
   /// The master list of all available stations.
   final List<Station> stations;
 
-  final Map<String, List<Locker>> lockersByStation;
   final String locationDraft;
   final String savedLocation;
   final bool savingLocation;
   final ValueChanged<String> onLocationChanged;
   final Future<void> Function() onSaveLocation;
-  final AccessRequest? Function(String stationId) activeRequestForStation;
-  final int Function(String stationId) freeCountForStation;
-  final Future<void> Function(Station station) onOpenStation;
+  final ApiClient client;
   final Future<void> Function() onRefresh;
 
   @override
@@ -56,8 +46,7 @@ class _StationsViewState extends State<StationsView> {
   static const _muted = Color(0xFFA6A39B);
   static const _text  = Color(0xFF1F1E1B);
 
-  /// The current active sorting method (defaults to distance).
-  HomeStationSort _sort = HomeStationSort.distance;
+  /// Sorting is fixed to distance by default per design change.
 
   /// The user's exact GPS coordinates, populated after location detection.
   Position? _currentPosition;
@@ -192,21 +181,23 @@ class _StationsViewState extends State<StationsView> {
     );
   }
 
-  /// Formats a raw distance in meters into a human-readable string .
-  /// (e.g., "850 m" or "2.4 km").
-  String _distanceLabel(double meters) {
-    if (meters < 1000) return '${meters.round()} m';
-    return '${(meters / 1000.0).toStringAsFixed(1)} km';
+  /// Shows the membership request modal for the selected station.
+  void _showMembershipModal(Station station) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MembershipRequestModal(
+        station: station,
+        client: widget.client,
+        onMembershipRequested: widget.onRefresh,
+      ),
+    );
   }
 
-  /// Returns a new list of stations sorted by the currently selected [HomeStationSort] criteria.
+  /// Returns a new list of stations sorted by distance (closest first).
   List<Station> get _sortedStations {
     final sorted = [...widget.stations];
     sorted.sort((a, b) {
-      if (_sort == HomeStationSort.availability) {
-        return widget.freeCountForStation(b.id)
-            .compareTo(widget.freeCountForStation(a.id));
-      }
       final da = _distanceMeters(a);
       final db = _distanceMeters(b);
       if (da == null && db == null) return 0;
@@ -273,11 +264,6 @@ class _StationsViewState extends State<StationsView> {
             ),
             const SizedBox(height: 14),
 
-            // Sorting toggle (Distance vs Availability)
-            SortPill(
-              value: _sort,
-              onChanged: (v) => setState(() => _sort = v),
-            ),
             const SizedBox(height: 16),
 
             // Station list or empty state message
@@ -293,23 +279,12 @@ class _StationsViewState extends State<StationsView> {
               )
             else
               ...sorted.map((station) {
-                // Calculate real-time metrics for each card
-                final total =
-                    widget.lockersByStation[station.id]?.length ?? 0;
-                final free = widget.freeCountForStation(station.id);
-                final dist = _distanceMeters(station);
-
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 14),
-                  // station card with all relevant data and interactions
+                  // station card (name only) with tap to show membership modal
                   child: StationCard(
                     station: station,
-                    total: total,
-                    free: free,
-                    distanceLabel: dist == null
-                        ? null
-                        : _distanceLabel(dist),
-                    onTap: () => widget.onOpenStation(station),
+                    onTap: () => _showMembershipModal(station),
                   ),
                 );
               }),
