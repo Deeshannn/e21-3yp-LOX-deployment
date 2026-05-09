@@ -63,8 +63,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Fetches all required backend data to populate the home screen.
-  /// 
-  /// This fetches stations and requests sequentially, but optimizes 
+  ///
+  /// This fetches stations and requests sequentially, but optimizes
   /// locker fetching by resolving them concurrently via [Future.wait].
   Future<void> _loadData() async {
     setState(() {
@@ -73,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       debugPrint('🔄 HomeScreen: Starting data load...');
-      
+
       debugPrint('🔄 HomeScreen: Fetching stations...');
       final stations = await widget.session.client.fetchStations();
       debugPrint('✅ HomeScreen: Stations loaded: ${stations.length}');
@@ -204,7 +204,10 @@ class _HomeScreenState extends State<HomeScreen> {
             onRefresh: _loadData,
             client: widget.session.client,
           ),
-          const MyLockersScreen(),
+          MyLockersScreen(
+            client: widget.session.client,
+            selectedStationId: _selectedStationId,
+          ),
           AccountScreen(user: widget.session.user, onLogout: widget.onLogout),
         ],
       ),

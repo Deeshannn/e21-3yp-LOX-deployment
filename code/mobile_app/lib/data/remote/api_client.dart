@@ -284,4 +284,30 @@ class ApiClient {
       rethrow;
     }
   }
+
+  /// Fetch full details of the locker currently reserved by the logged-in user.
+  Future<Locker> fetchReservedLockerDetails(String stationId) async {
+    debugPrint('📡 Fetching reserved locker details for station: $stationId');
+    try {
+      if (stationId.isEmpty) {
+        throw const ApiError('Missing station ID for locker details request');
+      }
+
+      if (userId.isEmpty) {
+        throw const ApiError('Missing user ID for locker details request');
+      }
+
+      final payload = await _request(
+        'GET',
+        '/api/lockers/reserved-details/$stationId?user_id=$userId',
+      );
+
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      debugPrint('✅ Reserved locker details loaded');
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error fetching reserved locker details: $e');
+      rethrow;
+    }
+  }
 }
