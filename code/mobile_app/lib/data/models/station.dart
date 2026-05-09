@@ -26,7 +26,7 @@ class Station {
         : null;
 
     return Station(
-      id: json['_id']?.toString() ?? '',
+      id: json['station_id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Unknown station',
       code: json['code']?.toString() ?? '-',
       latitude: lat,
