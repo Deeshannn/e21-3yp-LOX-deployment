@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../../data/local/local_store.dart';
 import '../../../data/models/access_request.dart';
-import '../../../data/models/locker.dart';
 import '../../../data/models/session_data.dart';
 import '../../../data/models/station.dart';
 import '../tabs/account/screens/account_screen.dart';
 import '../tabs/my_lockers/screens/requests_screen.dart';
-import '../tabs/explore/screens/station_detail_screen.dart';
 import '../tabs/explore/screens/explore_screen.dart';
 
 /// The primary shell screen for authenticated users.
@@ -43,9 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // Core Data State
   List<Station> _stations = const [];
   List<AccessRequest> _requests = const [];
-
-  /// Maps a Station ID to its corresponding list of Lockers.
-  final Map<String, List<Locker>> _lockersByStation = {};
+  Map<String, String> _membershipStatuses = const {};
 
   @override
   void initState() {
@@ -75,27 +71,17 @@ class _HomeScreenState extends State<HomeScreen> {
       _error = null;
     });
     try {
+      debugPrint('🔄 HomeScreen: Starting data load...');
+      
+      debugPrint('🔄 HomeScreen: Fetching stations...');
       final stations = await widget.session.client.fetchStations();
-      final requests = await widget.session.client.fetchRequests();
+      debugPrint('✅ HomeScreen: Stations loaded: ${stations.length}');
 
-      _lockersByStation.clear();
-
-      // Concurrently fetch lockers for all retrieved stations to reduce load time.
-      final lockerEntries = await Future.wait(
-        stations.map((station) async {
-          try {
-            final lockers = await widget.session.client.fetchLockers(
-              station.id,
-            );
-            return MapEntry(station.id, lockers);
-          } catch (_) {
-            // If fetching lockers for a specific station fails, return an empty list 
-            // rather than failing the entire data load process.
-            return MapEntry(station.id, <Locker>[]);
-          }
-        }),
+      debugPrint('🔄 HomeScreen: Fetching membership statuses...');
+      final membershipStatuses = await _fetchMembershipStatuses(stations);
+      debugPrint(
+        '✅ HomeScreen: Membership statuses loaded: ${membershipStatuses.length}',
       );
-      _lockersByStation.addEntries(lockerEntries);
 
       // Validate and update the selected station ID.
       if (_selectedStationId.isNotEmpty &&
@@ -110,16 +96,48 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _stations = stations;
-        _requests = requests;
+        _membershipStatuses = membershipStatuses;
         _loading = false;
       });
+      debugPrint('✅ HomeScreen: Data load complete');
     } catch (error) {
+      debugPrint('❌ HomeScreen: Data load failed: $error');
       if (!mounted) return;
       setState(() {
         _error = error.toString();
         _loading = false;
       });
     }
+  }
+
+  /// Fetches membership statuses for all known stations and keeps only
+  /// relevant statuses for the requests tab.
+  Future<Map<String, String>> _fetchMembershipStatuses(
+    List<Station> stations,
+  ) async {
+    if (stations.isEmpty) return const {};
+
+    final results = await Future.wait(
+      stations.map((station) async {
+        try {
+          final status = await widget.session.client.fetchMembershipStatus(
+            station.id,
+          );
+          return MapEntry(station.id, status);
+        } catch (_) {
+          return const MapEntry('', 'none');
+        }
+      }),
+    );
+
+    final filtered = <String, String>{};
+    for (final entry in results) {
+      if (entry.key.isEmpty) continue;
+      if (entry.value == 'pending' || entry.value == 'member') {
+        filtered[entry.key] = entry.value;
+      }
+    }
+    return filtered;
   }
 
   /// Persists the user's drafted location to local storage.
@@ -135,43 +153,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Location saved.')));
-  }
-
-  /// Checks if there is an active (PENDING or QUEUED) access request 
-  /// associated with a specific [stationId].
-  AccessRequest? _activeRequestForStation(String stationId) {
-    for (final r in _requests) {
-      if (r.stationId == stationId &&
-          (r.status == 'PENDING' || r.status == 'QUEUED')) {
-        return r;
-      }
-    }
-    return null;
-  }
-
-  /// Calculates the number of unbooked lockers for a given [stationId].
-  int _freeCountForStation(String stationId) {
-    return (_lockersByStation[stationId] ?? const [])
-        .where((l) => !l.isBooked)
-        .length;
-  }
-
-  /// Navigates to the [StationDetailScreen] for the selected station.
-  /// 
-  /// Waits for the screen to pop, and if it returns `true` 
-  /// (indicating a state change like a new booking), refreshes the home screen data.
-  Future<void> _openStation(Station station) async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => StationDetailScreen(
-          client: widget.session.client,
-          station: station,
-          initialLockers: _lockersByStation[station.id] ?? const [],
-          activeRequest: _activeRequestForStation(station.id),
-        ),
-      ),
-    );
-    if (result == true) await _loadData();
   }
 
   @override
@@ -207,21 +188,20 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           StationsView(
             stations: _stations,
-            lockersByStation: _lockersByStation,
             locationDraft: _locationDraft,
             savedLocation: _savedLocation,
             savingLocation: _savingLocation,
             onLocationChanged: (val) => setState(() => _locationDraft = val),
             onSaveLocation: _saveLocation,
-            activeRequestForStation: _activeRequestForStation,
-            freeCountForStation: _freeCountForStation,
-            onOpenStation: _openStation,
+            client: widget.session.client,
             onRefresh: _loadData,
           ),
           RequestsScreen(
             requests: _requests,
             stations: _stations,
+            membershipStatuses: _membershipStatuses,
             onRefresh: _loadData,
+            client: widget.session.client,
           ),
           AccountScreen(user: widget.session.user, onLogout: widget.onLogout),
         ],
