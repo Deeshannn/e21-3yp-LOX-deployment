@@ -15,6 +15,20 @@ initStationDBs()
 // Initialize MQTT — connects to broker and listens to ESP32
 require("./services/mqttService")
 
+// Start queue expiry checker — runs every 30 seconds
+// Ensures expired offers are processed and next user notified
+// even if no one is actively polling the notification endpoint
+const { expireStaleOffers } = require("./utils/queueProcessor")
+const queueStationIds = process.env.STATION_DBS
+  .split(",")
+  .map((entry) => entry.split("|")[0].trim())
+
+setInterval(async () => {
+  for (const sid of queueStationIds) {
+    try { await expireStaleOffers(sid) } catch {}
+  }
+}, 30 * 1000)
+
 // Start overdue locker checker — runs every 60 seconds
 // Reads station IDs from env to know which stations to check
 const { startOverdueChecker }  = require("./utils/overdueChecker")
