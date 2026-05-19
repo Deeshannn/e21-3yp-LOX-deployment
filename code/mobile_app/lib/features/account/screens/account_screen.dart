@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../data/models/user_profile.dart';
+import '../../../data/models/user_profile.dart';
 
 class AccountScreen extends StatelessWidget {
   const AccountScreen({

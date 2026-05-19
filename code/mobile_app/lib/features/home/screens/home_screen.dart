@@ -4,7 +4,7 @@ import '../../../data/local/local_store.dart';
 import '../../../data/models/access_request.dart';
 import '../../../data/models/session_data.dart';
 import '../../../data/models/station.dart';
-import '../tabs/account/screens/account_screen.dart';
+import '../../account/screens/account_screen.dart';
 import '../tabs/my_lockers/screens/requests_screen.dart';
 import '../tabs/my_lockers/screens/my_lockers_screen.dart';
 import '../tabs/explore/screens/explore_screen.dart';
