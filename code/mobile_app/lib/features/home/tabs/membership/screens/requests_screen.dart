@@ -4,7 +4,7 @@ import '../../../../../core/extensions/string_extensions.dart';
 import '../../../../../data/models/access_request.dart';
 import '../../../../../data/models/station.dart';
 import '../../../../../data/remote/api_client.dart';
-import '../../my_lockers/screens/station_lockers_screen.dart';
+import 'station_lockers_screen.dart';
 
 class RequestsScreen extends StatelessWidget {
   const RequestsScreen({
