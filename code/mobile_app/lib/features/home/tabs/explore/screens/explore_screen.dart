@@ -7,6 +7,7 @@ import '../../../../../data/remote/api_client.dart';
 import '../widgets/location_pill.dart';
 import '../widgets/membership_request_modal.dart';
 import '../widgets/station_card.dart';
+import '../../../../../data/local/local_store.dart';
 
 /// A core UI component that displays a scrollable list of locker stations.
 ///
@@ -19,6 +20,8 @@ class StationsView extends StatefulWidget {
     required this.stations,
     required this.locationDraft,
     required this.savedLocation,
+    required this.initialLatitude,
+    required this.initialLongitude,
     required this.savingLocation,
     required this.onLocationChanged,
     required this.onSaveLocation,
@@ -31,6 +34,8 @@ class StationsView extends StatefulWidget {
 
   final String locationDraft;
   final String savedLocation;
+  final double? initialLatitude;
+  final double? initialLongitude;
   final bool savingLocation;
   final ValueChanged<String> onLocationChanged;
   final Future<void> Function() onSaveLocation;
@@ -42,17 +47,25 @@ class StationsView extends StatefulWidget {
 }
 
 class _StationsViewState extends State<StationsView> {
-  static const _bg   = Color(0xFFF6F5F1);
+  static const _bg = Color(0xFFF6F5F1);
   static const _muted = Color(0xFFA6A39B);
-  static const _text  = Color(0xFF1F1E1B);
+  static const _text = Color(0xFF1F1E1B);
 
   /// Sorting is fixed to distance by default per design change.
 
   /// The user's exact GPS coordinates, populated after location detection.
-  Position? _currentPosition;
+  double? _currentLatitude;
+  double? _currentLongitude;
 
   /// Indicates if the device is currently fetching GPS and geocoding data.
   bool _locLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentLatitude = widget.initialLatitude;
+    _currentLongitude = widget.initialLongitude;
+  }
 
   /// Requests hardware location permissions and retrieves the user's current coordinates.
   ///
@@ -60,10 +73,14 @@ class _StationsViewState extends State<StationsView> {
   /// city and country (e.g., "Colombo, Sri Lanka") to display in the UI.
   Future<void> _pickCurrentLocation() async {
     setState(() => _locLoading = true);
+    // debugPrint("Starting location detection...");
     try {
       // Verify hardware services are active
       final enabled = await Geolocator.isLocationServiceEnabled();
-      if (!enabled) { _show('Location services are disabled.'); return; }
+      if (!enabled) {
+        _show('Location services are disabled.');
+        return;
+      }
 
       // Check and request app permissions
       var perm = await Geolocator.checkPermission();
@@ -78,21 +95,26 @@ class _StationsViewState extends State<StationsView> {
 
       // Fetch high-accuracy GPS coordinates
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings:
-            const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
 
       String label = 'Current location';
+      // debugPrint('Obtained coordinates: ${pos.latitude}, ${pos.longitude}');
       try {
-        final placemarks =
-            await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        final placemarks = await placemarkFromCoordinates(
+          pos.latitude,
+          pos.longitude,
+        );
+        debugPrint('Geocoding result: $placemarks');
         if (placemarks.isNotEmpty) {
           final place = placemarks.first;
-          final city =
-              (place.locality ?? place.subAdministrativeArea ?? '').trim();
+          // Select subadministrative area (city) and country for the label, if available
+          final city = (place.subAdministrativeArea ?? '')
+              .trim();
           final country = (place.country ?? '').trim();
-          final parts =
-              [city, country].where((v) => v.isNotEmpty).toList();
+          final parts = [city, country].where((v) => v.isNotEmpty).toList();
           if (parts.isNotEmpty) label = parts.join(', ');
         }
       } catch (_) {}
@@ -100,7 +122,14 @@ class _StationsViewState extends State<StationsView> {
       if (!mounted) return;
 
       // Update state and trigger parent callbacks to save the new location
-      setState(() => _currentPosition = pos);
+      setState(() {
+        _currentLatitude = pos.latitude;
+        _currentLongitude = pos.longitude;
+      });
+      await LocalStore.saveLocationCoordinates(
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+      );
       widget.onLocationChanged(label);
       await widget.onSaveLocation();
     } catch (error) {
@@ -126,7 +155,8 @@ class _StationsViewState extends State<StationsView> {
           children: [
             // Handlebar for the bottom sheet
             Container(
-              width: 42, height: 5,
+              width: 42,
+              height: 5,
               decoration: BoxDecoration(
                 color: const Color(0xFFE1DED7),
                 borderRadius: BorderRadius.circular(99),
@@ -135,23 +165,29 @@ class _StationsViewState extends State<StationsView> {
             const SizedBox(height: 14),
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text('Select location',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800)),
+              child: Text(
+                'Select location',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
             ),
             const SizedBox(height: 10),
             ListTile(
               leading: const CircleAvatar(
                 backgroundColor: Color(0xFFE7E4DD),
-                child: Icon(Icons.my_location_rounded,
-                    color: Color(0xFF5B5A3D)),
+                child: Icon(
+                  Icons.my_location_rounded,
+                  color: Color(0xFF5B5A3D),
+                ),
               ),
-              title: const Text('Use current location',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text(
-                  'We will sort nearby stations by distance'),
+              title: const Text(
+                'Use current location',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: const Text('We will sort nearby stations by distance'),
               onTap: () async {
-                Navigator.pop(context); // Close sheet before starting async work
+                Navigator.pop(
+                  context,
+                ); // Close sheet before starting async work
                 await _pickCurrentLocation();
               },
             ),
@@ -162,23 +198,33 @@ class _StationsViewState extends State<StationsView> {
     );
   }
 
-
   void _show(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   /// Calculates the straight-line distance in meters from the user to the [station].
   /// Returns null if the user's position or the station's coordinates are unavailable.
   double? _distanceMeters(Station station) {
-    final pos = _currentPosition;
-    if (pos == null) return null;
+    final latitude = _currentLatitude;
+    final longitude = _currentLongitude;
+    if (latitude == null || longitude == null) return null;
     if (station.latitude == null || station.longitude == null) return null;
     return Geolocator.distanceBetween(
-      pos.latitude, pos.longitude,
-      station.latitude!, station.longitude!,
+      latitude,
+      longitude,
+      station.latitude!,
+      station.longitude!,
     );
+  }
+
+  String? _distanceLabel(Station station) {
+    final meters = _distanceMeters(station);
+    if (meters == null) return null;
+    if (meters >= 1000) {
+      return '${(meters / 1000).toStringAsFixed(1)} km away';
+    }
+    return '${meters.round()} m away';
   }
 
   /// Shows the membership request modal for the selected station.
@@ -197,6 +243,9 @@ class _StationsViewState extends State<StationsView> {
   /// Returns a new list of stations sorted by distance (closest first).
   List<Station> get _sortedStations {
     final sorted = [...widget.stations];
+    if (_currentLatitude == null || _currentLongitude == null) {
+      return sorted;
+    }
     sorted.sort((a, b) {
       final da = _distanceMeters(a);
       final db = _distanceMeters(b);
@@ -208,13 +257,12 @@ class _StationsViewState extends State<StationsView> {
     return sorted;
   }
 
-
   @override
   Widget build(BuildContext context) {
     final activeLocationText = widget.locationDraft.trim().isEmpty
         ? (widget.savedLocation.trim().isEmpty
-            ? 'Tap to set location'
-            : widget.savedLocation.trim())
+              ? 'Tap to set location'
+              : widget.savedLocation.trim())
         : widget.locationDraft.trim();
 
     final sorted = _sortedStations;
@@ -239,9 +287,7 @@ class _StationsViewState extends State<StationsView> {
 
             // Location display and interactive trigger
             LocationPill(
-              label: _locLoading
-                  ? 'Detecting location…'
-                  : activeLocationText,
+              label: _locLoading ? 'Detecting location…' : activeLocationText,
               loading: _locLoading,
               onTap: _locLoading ? null : _showLocationSheet,
             ),
@@ -271,10 +317,13 @@ class _StationsViewState extends State<StationsView> {
               const Padding(
                 padding: EdgeInsets.only(top: 40),
                 child: Center(
-                  child: Text('No stations found.',
-                      style: TextStyle(
-                          color: _muted,
-                          fontWeight: FontWeight.w700)),
+                  child: Text(
+                    'No stations found.',
+                    style: TextStyle(
+                      color: _muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               )
             else
@@ -284,6 +333,7 @@ class _StationsViewState extends State<StationsView> {
                   // station card (name only) with tap to show membership modal
                   child: StationCard(
                     station: station,
+                    distanceLabel: _distanceLabel(station),
                     onTap: () => _showMembershipModal(station),
                   ),
                 );
