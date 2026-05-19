@@ -5,7 +5,7 @@ import '../../../data/models/access_request.dart';
 import '../../../data/models/session_data.dart';
 import '../../../data/models/station.dart';
 import '../../account/screens/account_screen.dart';
-import '../tabs/my_lockers/screens/requests_screen.dart';
+import '../tabs/membership/screens/requests_screen.dart';
 import '../tabs/my_lockers/screens/my_lockers_screen.dart';
 import '../tabs/explore/screens/explore_screen.dart';
 
@@ -228,7 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildNavItem(icon: Icons.map, label: 'EXPLORE', index: 0),
               _buildNavItem(
                 icon: Icons.lock_outline,
-                label: 'BOOKINGS',
+                label: 'MEMBERSHIPS',
                 index: 1,
               ),
               _buildNavItem(
