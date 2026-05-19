@@ -228,12 +228,12 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildNavItem(icon: Icons.map, label: 'EXPLORE', index: 0),
               _buildNavItem(
                 icon: Icons.lock_outline,
-                label: 'MEMBERSHIPS',
+                label: 'STATIONS',
                 index: 1,
               ),
               _buildNavItem(
                 icon: Icons.assignment_outlined,
-                label: 'MY LOCKERS',
+                label: 'LOCKERS',
                 index: 2,
               ),
               _buildNavItem(
