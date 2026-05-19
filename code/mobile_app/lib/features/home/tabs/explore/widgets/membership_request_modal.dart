@@ -72,34 +72,29 @@ class _MembershipRequestModalState extends State<MembershipRequestModal> {
   }
 
   Future<void> _requestMembership() async {
-    setState(() => _requesting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    
+    Navigator.of(context).pop();
+
     try {
       debugPrint('Requesting membership for station ${widget.station.id}');
+      // The API call happens silently here. The parent UI will remain completely static.
       await widget.client.createMembershipRequest(widget.station.id);
-      if (!mounted) return;
       
-      setState(() => _membershipStatus = 'pending');
-      
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('Membership request sent to station admins.'),
         ),
       );
       
-      // Notify parent to refresh and close modal
       widget.onMembershipRequested();
-      if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _requesting = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
     }
   }
-
+  
   @override
   Widget build(BuildContext context) {
     return Container(
