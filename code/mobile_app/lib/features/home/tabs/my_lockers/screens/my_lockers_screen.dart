@@ -1,10 +1,13 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../../../../core/errors/api_error.dart';
 import '../../../../../../data/models/locker.dart';
 import '../../../../../../data/remote/api_client.dart';
+import '../widgets/empty_card.dart';
+import '../widgets/error_card.dart';
+import '../widgets/live_indicator.dart';
+import '../widgets/locker_content.dart';
 
 /// Screen displaying the user's lockers and locker management options.
 class MyLockersScreen extends StatefulWidget {
@@ -23,16 +26,21 @@ class MyLockersScreen extends StatefulWidget {
 
 class _MyLockersScreenState extends State<MyLockersScreen> {
   static const _bg = Color(0xFFF6F5F1);
-  static const _card = Colors.white;
   static const _text = Color(0xFF1F1E1B);
   static const _muted = Color(0xFFA6A39B);
   static const _olive = Color(0xFF5B5A3D);
+  // static const _successGreen = Color(0xFF42B77A);
+  // static const _successGreenLight = Color(0xFFE8F6ED);
+  static const _errorRed = Color(0xFFE54B4B);
 
   Locker? _locker;
   bool _loading = true;
   String? _error;
-  DateTime? _lastUpdatedAt;
   Timer? _pollTimer;
+  bool _lockingUnlocking = false;
+  bool _releasing = false;
+  String? _actionMessage;
+  Color? _actionMessageColor;
 
   @override
   void initState() {
@@ -84,11 +92,9 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
         _locker = locker;
         _loading = false;
         _error = null;
-        _lastUpdatedAt = DateTime.now();
       });
     } catch (error) {
       if (!mounted) return;
-
       final message = error is ApiError ? error.message : error.toString();
       final noReservation = message.toLowerCase().contains(
         'no reserved locker',
@@ -98,262 +104,222 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
         _locker = null;
         _loading = false;
         _error = noReservation ? null : message;
-        _lastUpdatedAt = DateTime.now();
       });
     }
   }
 
-  String _formatDateTime(DateTime? value) {
-    if (value == null) return '-';
+  /// Custom date formatter to match the UI: "Tue, 19 May 2026 • 14:35"
+  String _formatDateTimeDetailed(DateTime? value) {
+    if (value == null) return '—';
     final local = value.toLocal();
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    final dayName = days[local.weekday - 1];
+    final monthName = months[local.month - 1];
     final hh = local.hour.toString().padLeft(2, '0');
     final mm = local.minute.toString().padLeft(2, '0');
-    final ss = local.second.toString().padLeft(2, '0');
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hh:$mm:$ss';
+
+    return '$dayName, ${local.day} $monthName ${local.year} • $hh:$mm';
   }
 
-  Color _availabilityColor(String availability) {
-    switch (availability) {
-      case 'reserved':
-        return const Color(0xFFB85C58);
-      case 'overdue':
-        return const Color(0xFFA64112);
-      case 'available':
-        return const Color(0xFF4B8B3B);
-      case 'queue_hold':
-        return const Color(0xFF8A6E2F);
-      default:
-        return const Color(0xFF62605A);
+  Future<void> _unlockLocker() async {
+    if (_locker == null || _lockingUnlocking) return;
+    setState(() {
+      _lockingUnlocking = true;
+      _actionMessage = null;
+    });
+    try {
+      final updatedLocker = await widget.client.unlockLocker(
+        stationId: widget.selectedStationId,
+        lockerId: _locker!.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _locker = updatedLocker;
+        _lockingUnlocking = false;
+      });
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _loadLockerDetails(silent: true);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ApiError ? error.message : error.toString();
+      setState(() {
+        _lockingUnlocking = false;
+        _actionMessage = message;
+        _actionMessageColor = _errorRed;
+      });
     }
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 150,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: _muted,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: _text, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<void> _lockLocker() async {
+    if (_locker == null || _lockingUnlocking) return;
+    setState(() {
+      _lockingUnlocking = true;
+      _actionMessage = null;
+    });
+    try {
+      final updatedLocker = await widget.client.lockLocker(
+        stationId: widget.selectedStationId,
+        lockerId: _locker!.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _locker = updatedLocker;
+        _lockingUnlocking = false;
+      });
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _loadLockerDetails(silent: true);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ApiError ? error.message : error.toString();
+      setState(() {
+        _lockingUnlocking = false;
+        _actionMessage = message;
+        _actionMessageColor = _errorRed;
+      });
+    }
+  }
+
+  Future<void> _requestReleaseLocker() async {
+    if (_locker == null || _releasing) return;
+    setState(() {
+      _releasing = true;
+      _actionMessage = null;
+    });
+    try {
+      final updatedLocker = await widget.client.requestReleaseLocker(
+        stationId: widget.selectedStationId,
+        lockerId: _locker!.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _locker = updatedLocker;
+        _releasing = false;
+      });
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _loadLockerDetails(silent: true);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ApiError ? error.message : error.toString();
+      setState(() {
+        _releasing = false;
+        _actionMessage = message;
+        _actionMessageColor = _errorRed;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Locker')),
-      body: Container(
-        color: _bg,
+      backgroundColor: _bg,
+      body: SafeArea(
         child: RefreshIndicator(
+          color: _olive,
           onRefresh: _loadLockerDetails,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
-            children: [
-              const Text(
-                'LIVE STATUS',
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 12,
-                  letterSpacing: 2.0,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: _card,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE6E2DA)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.hub_outlined, color: _olive),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Station: ${widget.selectedStationId.isEmpty ? '-' : widget.selectedStationId}',
-                        style: const TextStyle(
-                          color: _text,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    if (_lastUpdatedAt != null)
-                      Text(
-                        '${_lastUpdatedAt!.hour.toString().padLeft(2, '0')}:${_lastUpdatedAt!.minute.toString().padLeft(2, '0')}:${_lastUpdatedAt!.second.toString().padLeft(2, '0')}',
-                        style: const TextStyle(
-                          color: _muted,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 120),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: _card,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE6E2DA)),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody:
+                    false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
                   ),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 38,
-                        color: Color(0xFFB85C58),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: _text,
-                          fontWeight: FontWeight.w600,
+                      if (_loading)
+                        const CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _olive,
+                        )
+                      else if (_error != null)
+                        ErrorCard(error: _error!, onRetry: _loadLockerDetails)
+                      else if (_locker == null)
+                        const EmptyCard()
+                      else ...[
+                        // Custom Header
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [const LiveIndicator()],
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _loadLockerDetails,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              else if (_locker == null)
-                Container(
-                  padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(
-                    color: _card,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE6E2DA)),
-                  ),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.lock_open_outlined, size: 48, color: _muted),
-                      SizedBox(height: 12),
-                      Text(
-                        'You do not have a reserved locker in this station.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _text,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: _card,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE6E2DA)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 14,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            _locker!.code,
-                            style: const TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w900,
-                              color: _text,
-                            ),
+                        const SizedBox(height: 32),
+
+                        // Station Name
+                        Text(
+                          widget.selectedStationId.toUpperCase(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: _muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.0,
                           ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Locker ID
+                        Text(
+                          'Locker ${_locker!.code}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 42,
+                            fontWeight: FontWeight.w900,
+                            color: _text,
+                            letterSpacing: -1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+
+                        // Locker Content Widget
+                        LockerContent(
+                          locker: _locker!,
+                          lockingUnlocking: _lockingUnlocking,
+                          releasing: _releasing,
+                          onUnlock: _unlockLocker,
+                          onLock: _lockLocker,
+                          onRelease: _requestReleaseLocker,
+                          formatDateTime: _formatDateTimeDetailed,
+                        ),
+
+                        // Action Error Display
+                        if (_actionMessage != null) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            _actionMessage!,
+                            style: TextStyle(
+                              color: _actionMessageColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
-                            decoration: BoxDecoration(
-                              color: _availabilityColor(
-                                _locker!.availability,
-                              ).withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              _locker!.availability.toUpperCase(),
-                              style: TextStyle(
-                                color: _availabilityColor(
-                                  _locker!.availability,
-                                ),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                                letterSpacing: 0.7,
-                              ),
-                            ),
+                            textAlign: TextAlign.center,
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 14),
-                      _detailRow('Locker state', _locker!.state ?? '-'),
-                      _detailRow('Lock state', _locker!.lockState ?? '-'),
-                      _detailRow('Door state', _locker!.doorState ?? '-'),
-                      _detailRow('Reserved by', _locker!.reservedBy ?? '-'),
-                      _detailRow(
-                        'Reserved at',
-                        _formatDateTime(_locker!.reservedAt),
-                      ),
-                      _detailRow(
-                        'Overdue at',
-                        _formatDateTime(_locker!.overdueAt),
-                      ),
-                      _detailRow(
-                        'Release requested',
-                        ((_locker!.releaseRequested ?? false) ? 'Yes' : 'No'),
-                      ),
-                      _detailRow(
-                        'Release requested at',
-                        _formatDateTime(_locker!.releaseRequestedAt),
-                      ),
-                      _detailRow(
-                        'Last reported at',
-                        _formatDateTime(_locker!.lastReportedAt),
-                      ),
+                      ],
                     ],
                   ),
                 ),
+              ),
             ],
           ),
         ),
