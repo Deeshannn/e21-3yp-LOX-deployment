@@ -34,9 +34,11 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
   static const _errorRed = Color(0xFFE54B4B);
 
   Locker? _locker;
+  DateTime? _freeLimitEndsAt;
   bool _loading = true;
   String? _error;
   Timer? _pollTimer;
+  Timer? _clockTimer;
   bool _lockingUnlocking = false;
   bool _releasing = false;
   String? _actionMessage;
@@ -48,6 +50,11 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
     _loadLockerDetails();
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _loadLockerDetails(silent: true);
+    });
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _locker != null) {
+        setState(() {});
+      }
     });
   }
 
@@ -62,6 +69,7 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _clockTimer?.cancel();
     super.dispose();
   }
 
@@ -70,6 +78,7 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
       if (!mounted) return;
       setState(() {
         _locker = null;
+        _freeLimitEndsAt = null;
         _loading = false;
         _error = 'No station selected yet.';
       });
@@ -84,30 +93,37 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
     }
 
     try {
-      final locker = await widget.client.fetchReservedLockerDetails(
-        widget.selectedStationId,
-      );
+      final locker = await widget.client.fetchReservedLockerDetails(widget.selectedStationId);
+      
+      DateTime? freeLimitEndsAt;
+      try {
+        final timingPayload = await widget.client.fetchLockerTimeRemaining(widget.selectedStationId);
+        // Explicitly check if time_limit is disabled
+        if (timingPayload['time_limit'] == true) {
+          freeLimitEndsAt = DateTime.tryParse(timingPayload['expires_at']?.toString() ?? '');
+        }
+      } catch (_) {
+        freeLimitEndsAt = null;
+      }
+
       if (!mounted) return;
       setState(() {
         _locker = locker;
+        _freeLimitEndsAt = freeLimitEndsAt;
         _loading = false;
         _error = null;
       });
     } catch (error) {
       if (!mounted) return;
       final message = error is ApiError ? error.message : error.toString();
-      final noReservation = message.toLowerCase().contains(
-        'no reserved locker',
-      );
-
       setState(() {
         _locker = null;
+        _freeLimitEndsAt = null;
         _loading = false;
-        _error = noReservation ? null : message;
+        _error = message.toLowerCase().contains('no reserved locker') ? null : message;
       });
     }
   }
-
   /// Custom date formatter to match the UI: "Tue, 19 May 2026 • 14:35"
   String _formatDateTimeDetailed(DateTime? value) {
     if (value == null) return '—';
@@ -134,6 +150,19 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
     final mm = local.minute.toString().padLeft(2, '0');
 
     return '$dayName, ${local.day} $monthName ${local.year} • $hh:$mm';
+  }
+
+  String _formatDuration(Duration duration) {
+    final safeDuration = duration.isNegative ? Duration.zero : duration;
+    final hours = safeDuration.inHours;
+    final minutes = safeDuration.inMinutes.remainder(60);
+    final seconds = safeDuration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '${hours}h ${minutes.toString().padLeft(2, '0')}m';
+    }
+
+    return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
   }
 
   Future<void> _unlockLocker() async {
@@ -228,6 +257,39 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final freeLimitEndsAt = _freeLimitEndsAt;
+    
+    // Logic to determine timing state
+    final bool hasLimit = freeLimitEndsAt != null;
+    final bool isOverdue = hasLimit && now.isAfter(freeLimitEndsAt);
+
+    String timingLabel;
+    String timingValue;
+    String timingSubtext;
+    Color timingColor;
+    IconData timingIcon;
+
+    if (!hasLimit) {
+      timingLabel = 'ACCESS STATUS';
+      timingValue = 'UNLIMITED';
+      timingSubtext = 'No time limit for this station';
+      timingColor = _olive;
+      timingIcon = Icons.lock_clock_rounded;
+    } else if (isOverdue) {
+      timingLabel = 'FREE TIME ENDED';
+      timingValue = 'OVERDUE';
+      timingSubtext = 'Exceeded by ${_formatDuration(now.difference(freeLimitEndsAt))}';
+      timingColor = _errorRed;
+      timingIcon = Icons.timer_off_rounded;
+    } else {
+      timingLabel = 'FREE TIME LEFT';
+      timingValue = _formatDuration(freeLimitEndsAt.difference(now));
+      timingSubtext = 'Ends at ${_formatDateTimeDetailed(freeLimitEndsAt)}';
+      timingColor = _olive;
+      timingIcon = Icons.hourglass_top_rounded;
+    }
+
     return Scaffold(
       backgroundColor: _bg,
       body: SafeArea(
@@ -300,6 +362,13 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
                           onLock: _lockLocker,
                           onRelease: _requestReleaseLocker,
                           formatDateTime: _formatDateTimeDetailed,
+                          timingLabel: timingLabel,
+                          timingValue: timingValue,
+                          timingSubtext: timingSubtext,
+                          timingColor: isOverdue ? _errorRed : _olive,
+                          timingIcon: isOverdue
+                              ? Icons.timer_off_rounded
+                              : Icons.hourglass_top_rounded,
                         ),
 
                         // Action Error Display

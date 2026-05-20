@@ -13,6 +13,11 @@ class LockerContent extends StatelessWidget {
     required this.onLock,
     required this.onRelease,
     required this.formatDateTime,
+    required this.timingLabel,
+    required this.timingValue,
+    required this.timingSubtext,
+    required this.timingColor,
+    required this.timingIcon,
   });
 
   final Locker locker;
@@ -22,6 +27,11 @@ class LockerContent extends StatelessWidget {
   final VoidCallback onLock;
   final VoidCallback onRelease;
   final String Function(DateTime?) formatDateTime;
+  final String timingLabel;
+  final String timingValue;
+  final String timingSubtext;
+  final Color timingColor;
+  final IconData timingIcon;
 
   static const _olive = Color(0xFF5B5A3D);
   static const _text = Color(0xFF1F1E1B);
@@ -201,58 +211,125 @@ class LockerContent extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F7F3),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE7E3D9)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: timingColor.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        timingIcon,
+                        color: timingColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            timingLabel,
+                            style: const TextStyle(
+                              color: _muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            timingValue,
+                            style: TextStyle(
+                              color: timingColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            timingSubtext,
+                            style: const TextStyle(
+                              color: _muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: releasing ? null : onRelease,
+                  icon: releasing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.logout_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                  label: Text(
+                    releasing ? 'RELEASING...' : 'END SESSION & RELEASE',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _errorRed,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    shadowColor: _errorRed.withValues(alpha: 0.5),
+                    elevation: 8,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                'ESECURE LOCKER SESSION: ENCRYPTED',
+                style: TextStyle(
+                  color: Color(0xFFD4D1C9),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 20),
             ],
           ),
         ),
-        const SizedBox(height: 32),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: releasing ? null : onRelease,
-            icon: releasing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(
-                    Icons.logout_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-            label: Text(
-              releasing ? 'RELEASING...' : 'END SESSION & RELEASE',
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-              ),
-            ),
-            style: FilledButton.styleFrom(
-              backgroundColor: _errorRed,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              shadowColor: _errorRed.withValues(alpha: 0.5),
-              elevation: 8,
-            ),
-          ),
-        ),
-        const SizedBox(height: 32),
-        const Text(
-          'ESECURE LOCKER SESSION: ENCRYPTED',
-          style: TextStyle(
-            color: Color(0xFFD4D1C9),
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
-          ),
-        ),
-        const SizedBox(height: 20),
       ],
     );
   }
