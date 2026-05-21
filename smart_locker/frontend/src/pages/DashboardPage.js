@@ -42,62 +42,78 @@ function DashboardPage(props) {
     onUnlock,
     onLock,
     onRelease,
-    onIgnoreSecurity
+    onIgnoreSecurity,
+    onClearError,
+    onClearMessage,
+    onClearApprovalNotice,
+    onClearRejectionNotice
   } = props;
+
+  const activeNotification = error
+    ? { type: 'error', text: error, onClose: onClearError }
+    : rejectionNotice
+      ? { type: 'error', text: rejectionNotice, onClose: onClearRejectionNotice }
+      : approvalNotice
+        ? { type: 'success', text: approvalNotice, onClose: onClearApprovalNotice }
+        : message
+          ? { type: 'success', text: message, onClose: onClearMessage }
+          : null;
 
   return (
     <div className="page">
       <HeaderBar user={user} onRefresh={onRefresh} onLogout={onLogout} />
-      <AlertMessage type="error" text={error} />
-      <AlertMessage type="success" text={approvalNotice} />
-      <AlertMessage type="error" text={rejectionNotice} />
-      <AlertMessage type="success" text={message} />
+      {activeNotification ? <AlertMessage {...activeNotification} /> : null}
 
-      <AdminSetupPanel
-        user={user}
-        stations={stations}
-        stationForm={stationForm}
-        onStationFormChange={onStationFormChange}
-        onCreateStation={onCreateStation}
-        lockerForm={lockerForm}
-        onLockerFormChange={onLockerFormChange}
-        onCreateLocker={onCreateLocker}
-      />
+      <div className={user.role === 'SUB_ADMIN' ? 'dashboard-home-layout' : 'dashboard-stack'}>
+        <div className="dashboard-stack dashboard-home-main">
+          <AdminSetupPanel
+            user={user}
+            stations={stations}
+            stationForm={stationForm}
+            onStationFormChange={onStationFormChange}
+            onCreateStation={onCreateStation}
+            lockerForm={lockerForm}
+            onLockerFormChange={onLockerFormChange}
+            onCreateLocker={onCreateLocker}
+          />
 
-      <StationPanel
-        user={user}
-        stations={stations}
-        onEmergencyUnlock={onEmergencyUnlock}
-        onLockAll={onLockAll}
-        onChangeSchedule={onChangeSchedule}
-      />
+          <StationPanel
+            user={user}
+            stations={stations}
+            onEmergencyUnlock={onEmergencyUnlock}
+            onLockAll={onLockAll}
+            onChangeSchedule={onChangeSchedule}
+          />
 
-      <RequestPanel
-        user={user}
-        stations={stations}
-        requests={requests}
-        requestForm={requestForm}
-        onRequestFormChange={onRequestFormChange}
-        onCreateRequest={onCreateRequest}
-        onApprove={onApproveRequest}
-        onReject={onRejectRequest}
-        onCancel={onCancelRequest}
-      />
+          <RequestPanel
+            user={user}
+            stations={stations}
+            requests={requests}
+            requestForm={requestForm}
+            onRequestFormChange={onRequestFormChange}
+            onCreateRequest={onCreateRequest}
+            onApprove={onApproveRequest}
+            onReject={onRejectRequest}
+            onCancel={onCancelRequest}
+          />
 
-      <LockerPanel
-        user={user}
-        stations={stations}
-        selectedStationId={selectedStationId}
-        onStationChange={onStationFilterChange}
-        lockers={lockers}
-        onUnlock={onUnlock}
-        onLock={onLock}
-        onRelease={onRelease}
-        onIgnoreSecurity={onIgnoreSecurity}
-      />
+          <LockerPanel
+            user={user}
+            stations={stations}
+            selectedStationId={selectedStationId}
+            onStationChange={onStationFilterChange}
+            lockers={lockers}
+            onUnlock={onUnlock}
+            onLock={onLock}
+            onRelease={onRelease}
+            onIgnoreSecurity={onIgnoreSecurity}
+          />
 
-      <QueuePanel queueEntries={queueEntries} />
-      <EventPanel events={events} />
+          <QueuePanel queueEntries={queueEntries} />
+        </div>
+
+        {user.role === 'SUB_ADMIN' ? <EventPanel events={events} /> : null}
+      </div>
     </div>
   );
 }

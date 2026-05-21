@@ -77,12 +77,6 @@ function App() {
 
     localStorage.setItem(seenKey, JSON.stringify([...seenIds, latestRejected._id]));
     setRejectionNotice('Your current request was rejected. You can make another request now.');
-
-    const timeoutId = window.setTimeout(() => {
-      setRejectionNotice('');
-    }, 8000);
-
-    return () => window.clearTimeout(timeoutId);
   }, [token, user, requests]);
 
   React.useEffect(() => {
@@ -116,12 +110,6 @@ function App() {
 
     localStorage.setItem(seenKey, JSON.stringify([...seenIds, latestApproved._id]));
     setApprovalNotice(nextMessage);
-
-    const timeoutId = window.setTimeout(() => {
-      setApprovalNotice('');
-    }, 8000);
-
-    return () => window.clearTimeout(timeoutId);
   }, [token, user, requests]);
 
   const saveSession = (nextToken, nextUser) => {
@@ -141,6 +129,11 @@ function App() {
     setRejectionNotice('');
     setError('');
   };
+
+  const clearError = () => setError('');
+  const clearMessage = () => setMessage('');
+  const clearApprovalNotice = () => setApprovalNotice('');
+  const clearRejectionNotice = () => setRejectionNotice('');
 
   const onAuthFormChange = (key, value) => {
     setAuthForm((prev) => ({ ...prev, [key]: value }));
@@ -287,6 +280,10 @@ function App() {
     return (
       <AuthPage
         mode={authMode}
+        onClearError={clearError}
+        onClearMessage={clearMessage}
+        onClearApprovalNotice={clearApprovalNotice}
+        onClearRejectionNotice={clearRejectionNotice}
         form={authForm}
         error={error}
         message={message}
@@ -333,6 +330,10 @@ function App() {
       onLock={onLock}
       onRelease={onRelease}
       onIgnoreSecurity={onIgnoreSecurity}
+      onClearError={clearError}
+      onClearMessage={clearMessage}
+      onClearApprovalNotice={clearApprovalNotice}
+      onClearRejectionNotice={clearRejectionNotice}
     />
   );
 }

@@ -53,7 +53,8 @@ async function createLocker(user, payload) {
     code,
     controlTopic: payload.controlTopic || `locker/${code}/control`,
     stateTopic: payload.stateTopic || `locker/${code}/state`,
-    doorTopic: payload.doorTopic || `locker/${code}/door`
+    doorTopic: payload.doorTopic || `locker/${code}/door`,
+    securityTopic: payload.securityTopic || `locker/${code}/security`
   });
 
   await subscribeLockerState(locker);

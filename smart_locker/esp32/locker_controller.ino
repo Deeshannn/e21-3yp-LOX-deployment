@@ -28,6 +28,9 @@ const int doorIndicatorPin = 16; // External LED for L1 door open/close status
 const int beeperPin = 27; // 3-pin buzzer module I/O
 const bool beeperActiveLow = true; // This buzzer module variant is LOW-trigger in most cases
 
+// Vibration sensor (L1 security)
+const int vibrationSensorPin = 26;  // SW-420 Digital Output
+
 // OLED Display pins (I2C)
 const int SDA_PIN = 21;
 const int SCL_PIN = 22;
@@ -50,6 +53,11 @@ PubSubClient mqttClient(wifiClient);
 
 // Door state (only for L1)
 String lastDoorState = "UNKNOWN";
+
+// Vibration sensor state tracking
+bool vibrationDetected = false;
+unsigned long vibrationLastDetectedAt = 0;
+const unsigned long vibrationDebounceMs = 100; // Debounce time to avoid noise
 
 // Locker 1 display states
 String lockerStateDisplay = "LOCKED";
@@ -94,6 +102,10 @@ void clearSecurityAlarm(bool forceDoorClosed) {
   }
 
   securityAlarmActive = false;
+  vibrationDetected = false;
+  if (!forceDoorClosed) {
+    securityIgnoreLatched = false;
+  }
   setSecurityBeeper(false);
 
   if (forceDoorClosed) {
@@ -158,14 +170,19 @@ void updateDisplay() {
   if (securityAlarmActive) {
     display.setTextSize(2);
     display.setCursor(0, 10);
-    display.println("WARNING");
+    display.println("WARNING!");
 
     display.setTextSize(1);
     display.setCursor(0, 34);
-    display.println("Door opened");
+    if (vibrationDetected) {
+      display.println("Vibration!");
+      display.println("Break-in attempt?");
+    } else {
+      display.println("Door opened");
+    }
 
     display.setCursor(securityWarningWordX, 52);
-    display.println("OPENED");
+    display.println("ALERT");
   } else {
     display.setTextSize(1);
     display.setCursor(0, 0);
@@ -268,6 +285,7 @@ void publishDoorState() {
     displayNeedsUpdate = true;
 
     if (currentDoorState == "OPEN" && locker1IsLocked) {
+      vibrationDetected = false;
       triggerSecurityAlarm("Door sensor reported OPEN while locked");
     }
 
@@ -312,7 +330,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (incomingTopic == lockerSecurityTopics[0] || incomingTopic == legacySecurityTopics[0]) {
     if (message == "IGNORE") {
       Serial.println("Security alert ignored by user/admin");
-      clearSecurityAlarm(true);
+      bool doorCurrentlyOpen = digitalRead(doorSensorPin) == HIGH;
+      bool forceDoorClosed = locker1IsLocked && doorCurrentlyOpen;
+      clearSecurityAlarm(forceDoorClosed);
     }
   }
 
@@ -379,6 +399,29 @@ void connectMqtt() {
   }
 }
 
+// ---------------- VIBRATION SENSOR (L1 ONLY) ----------------
+void checkVibrationSensor() {
+  int sensorState = digitalRead(vibrationSensorPin);
+  unsigned long now = millis();
+
+  // Only monitor vibrations when locker is LOCKED
+  if (!locker1IsLocked) {
+    vibrationDetected = false;
+    return;
+  }
+
+  // Debounce: only process state changes after debounce period
+  if (sensorState == HIGH && !vibrationDetected && now - vibrationLastDetectedAt >= vibrationDebounceMs) {
+    vibrationDetected = true;
+    vibrationLastDetectedAt = now;
+    Serial.println("VIBRATION DETECTED on L1 while locked!");
+    triggerSecurityAlarm("Vibration detected - possible break-in");
+    mqttClient.publish(lockerSecurityTopics[0], "VIBRATION_ALERT", true);
+  }
+}
+
+
+
 // ---------------- SETUP ----------------
 void setup() {
   Serial.begin(115200);
@@ -426,6 +469,7 @@ void setup() {
   pinMode(doorSensorPin, INPUT_PULLUP);
   pinMode(doorIndicatorPin, OUTPUT);
   pinMode(beeperPin, OUTPUT);
+  pinMode(vibrationSensorPin, INPUT);  // SW-420 vibration sensor
   digitalWrite(doorIndicatorPin, LOW);
   setSecurityBeeper(false);
   runBeeperStartupTest();
@@ -470,6 +514,7 @@ void loop() {
   mqttClient.loop();
   publishDoorState();
   updateSecurityAlarm();
+  checkVibrationSensor();  // Monitor vibrations when locked
   
   // Update display if needed
   if (displayNeedsUpdate) {

@@ -26,6 +26,7 @@ function LockerPanel({
 
   const hasActiveUserLockers = activeUserLockers.length > 0;
   const visibleLockers = hasActiveUserLockers ? activeUserLockers : lockers;
+  const showLockerCards = user.role !== 'USER' || hasActiveUserLockers;
 
   const canControlLocker = (locker) => {
     if (user.role !== 'USER') {
@@ -43,12 +44,12 @@ function LockerPanel({
   };
 
   const canIgnoreL1SecurityWarning = (locker) => {
-    if (user.role !== 'SUB_ADMIN') {
+    if (user.role !== 'SUB_ADMIN' && user.role !== 'SUPER_ADMIN') {
       return false;
     }
 
     const allowedStationIds = (user.stationIds || []).map((id) => String(id));
-    return allowedStationIds.includes(getLockerStationId(locker));
+    return user.role === 'SUPER_ADMIN' || allowedStationIds.includes(getLockerStationId(locker));
   };
 
   return (
@@ -68,33 +69,37 @@ function LockerPanel({
 
       {!hasActiveUserLockers ? <LockerGrid lockers={lockers} /> : null}
 
-      <div className="cards">
-        {visibleLockers.map((locker) => (
-          <article className="mini-card" key={locker._id}>
-            <h3>{locker.code}</h3>
-            <p>Lock: {locker.lockState}</p>
-            <p>Door: {locker.doorState}</p>
-            <p>Booked: {locker.isBooked ? 'Yes' : 'No'}</p>
-            {locker.code === 'L1' && locker.lockState === 'LOCKED' && locker.doorState === 'OPEN' ? (
-              <p className="security-warning">Security issue: Door unexpectedly open while locked.</p>
-            ) : null}
-            {canControlLocker(locker) ? (
-              <div className="actions">
-                <button onClick={() => onUnlock(locker._id)}>Unlock</button>
-                <button onClick={() => onLock(locker._id)}>Lock</button>
-                <button onClick={() => onRelease(locker._id)}>Release</button>
-                {locker.code === 'L1' && locker.lockState === 'LOCKED' && locker.doorState === 'OPEN' && canIgnoreL1SecurityWarning(locker) ? (
-                  <button className="danger" onClick={() => onIgnoreSecurity(locker._id)}>
-                    Ignore Warning
-                  </button>
-                ) : null}
-              </div>
-            ) : (
-              <p className="muted-text">View only</p>
-            )}
-          </article>
-        ))}
-      </div>
+      {showLockerCards ? (
+        <div className="cards">
+          {visibleLockers.map((locker) => (
+            <article className="mini-card" key={locker._id}>
+              <h3>{locker.code}</h3>
+              <p>Lock: {locker.lockState}</p>
+              <p>Door: {locker.doorState}</p>
+              <p>Booked: {locker.isBooked ? 'Yes' : 'No'}</p>
+              {locker.code === 'L1' && locker.securityAlertActive ? (
+                <p className="security-warning">
+                  {locker.securityAlertMessage || 'Security alert active on Locker 1.'}
+                </p>
+              ) : null}
+              {canControlLocker(locker) ? (
+                <div className="actions">
+                  <button onClick={() => onUnlock(locker._id)}>Unlock</button>
+                  <button onClick={() => onLock(locker._id)}>Lock</button>
+                  <button onClick={() => onRelease(locker._id)}>Release</button>
+                  {locker.code === 'L1' && locker.securityAlertActive && canIgnoreL1SecurityWarning(locker) ? (
+                    <button className="danger" onClick={() => onIgnoreSecurity(locker._id)}>
+                      Ignore Warning
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="muted-text">View only</p>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

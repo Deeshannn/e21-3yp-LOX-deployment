@@ -38,18 +38,23 @@ async function subscribeLockerState(locker) {
 
   const canonicalStateTopic = buildDefaultTopic(locker, 'state');
   const canonicalDoorTopic = buildDefaultTopic(locker, 'door');
+  const canonicalSecurityTopic = buildDefaultTopic(locker, 'security');
 
   const legacyCode = locker.code && locker.code[0].toUpperCase() === 'L' ? locker.code.slice(1) : locker.code;
   const legacyStateTopic = `locker/${legacyCode}/state`;
   const legacyDoorTopic = `locker/${legacyCode}/door`;
+  const legacySecurityTopic = `locker/${legacyCode}/security`;
 
   const topicsToSubscribe = new Set([
     locker.stateTopic,
     locker.doorTopic,
+    locker.securityTopic,
     canonicalStateTopic,
     canonicalDoorTopic,
+    canonicalSecurityTopic,
     legacyStateTopic,
-    legacyDoorTopic
+    legacyDoorTopic,
+    legacySecurityTopic
   ]);
 
   for (const topic of topicsToSubscribe) {
@@ -74,6 +79,10 @@ async function subscribeAllLockers() {
   for (const locker of lockers) {
     if (!locker.doorTopic) {
       locker.doorTopic = `locker/${locker.code}/door`;
+      await locker.save();
+    }
+    if (!locker.securityTopic) {
+      locker.securityTopic = `locker/${locker.code}/security`;
       await locker.save();
     }
     await subscribeLockerState(locker);
@@ -213,6 +222,7 @@ if (client) {
       }
 
       const isDoorTopic = locker.doorTopic === topic || topic.endsWith('/door');
+      const isSecurityTopic = (locker.securityTopic && locker.securityTopic === topic) || topic.endsWith('/security');
 
       if (!isDoorTopic && [LockerStates.LOCKED, LockerStates.UNLOCKED].includes(value)) {
         locker.lockState = value;
@@ -232,6 +242,37 @@ if (client) {
         console.log(`Door state updated: ${locker.code} -> ${value}`);
         await logEvent(locker, 'DOOR_STATE', value === DoorStates.OPEN ? 'Door opened' : 'Door closed');
         return;
+      }
+
+      if (isSecurityTopic) {
+        const alertMessages = new Set(['ALERT', 'VIBRATION_ALERT']);
+        const clearMessages = new Set(['IGNORE', 'ACKNOWLEDGED', 'CLEAR', 'RESET']);
+
+        if (alertMessages.has(value)) {
+          locker.securityAlertActive = true;
+          if (value === 'VIBRATION_ALERT') {
+            locker.securityAlertMessage = 'Security issue: Vibration detected on Locker 1.';
+          } else if (locker.doorState === DoorStates.OPEN) {
+            locker.securityAlertMessage = 'Security issue: Door unexpectedly open while locked.';
+          } else {
+            locker.securityAlertMessage = 'Security issue: Alert active on Locker 1.';
+          }
+          locker.securityAlertUpdatedAt = new Date();
+          locker.lastSeenAt = new Date();
+          await locker.save();
+          await logEvent(locker, 'SECURITY_ALERT', locker.securityAlertMessage, { payload: value });
+          return;
+        }
+
+        if (clearMessages.has(value)) {
+          locker.securityAlertActive = false;
+          locker.securityAlertMessage = '';
+          locker.securityAlertUpdatedAt = new Date();
+          locker.lastSeenAt = new Date();
+          await locker.save();
+          await logEvent(locker, 'SECURITY_CLEARED', 'Security alert cleared', { payload: value });
+          return;
+        }
       }
 
       if (!locker.doorTopic && [DoorStates.OPEN, DoorStates.CLOSED].includes(value)) {
