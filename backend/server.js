@@ -4,6 +4,8 @@ const cors    = require("cors")
 const connectMasterDB    = require("./config/masterDB")
 const { initStationDBs } = require("./config/stationDB")
 const { seedAuthData } = require("./utils/bootstrapAuth")
+const { syncProvisionedStationDatabases } = require("./utils/stationProvisioner")
+const LockerStation = require("./models/master/LockerStation")
 
 const app = express()
 app.use(cors())
@@ -23,6 +25,7 @@ const bootstrap = async () => {
   initStationDBs()
 
   await seedAuthData()
+  await syncProvisionedStationDatabases()
 
   // Initialize MQTT — connects to broker and listens to ESP32
   require("./services/mqttService")
@@ -31,9 +34,8 @@ const bootstrap = async () => {
   // Reads station IDs from env to know which stations to check
   const { startOverdueChecker }  = require("./utils/overdueChecker")
   const { publishCommand }       = require("./services/mqttService")
-  const stationIds = process.env.STATION_DBS
-    .split(",")
-    .map((entry) => entry.split("|")[0].trim())
+  const activeStations = await LockerStation.find({ status: "active" }).select("station_id -_id")
+  const stationIds = activeStations.map((station) => station.station_id)
   startOverdueChecker(stationIds, publishCommand)
 
   // Health check

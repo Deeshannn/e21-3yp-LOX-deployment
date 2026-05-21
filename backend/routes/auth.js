@@ -100,6 +100,10 @@ const validateRegistrationPayload = async (payload) => {
     if (!station) {
       return { error: "Selected locker station was not found" }
     }
+
+    if (station.status !== "active") {
+      return { error: "Selected locker station is not active" }
+    }
   }
 
   return {

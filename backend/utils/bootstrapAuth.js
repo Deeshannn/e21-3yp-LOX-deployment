@@ -12,6 +12,9 @@ const DEFAULT_STATIONS = [
   {
     station_id: "STN-001",
     name: "Kochi Central",
+    locker_count: 72,
+    estimated_members: 180,
+    notes: "Primary city center station",
     location: {
       address: "MG Road, Kochi",
       city: "Kochi",
@@ -23,6 +26,9 @@ const DEFAULT_STATIONS = [
   {
     station_id: "STN-002",
     name: "Trivandrum Hub",
+    locker_count: 96,
+    estimated_members: 240,
+    notes: "High-traffic hub near the city center",
     location: {
       address: "MG Road, Trivandrum",
       city: "Trivandrum",
@@ -38,7 +44,14 @@ const seedAuthData = async () => {
     DEFAULT_STATIONS.map(async (station) => {
       await LockerStation.updateOne(
         { station_id: station.station_id },
-        { $setOnInsert: { ...station, status: "active", last_heartbeat_at: new Date() } },
+        {
+          $setOnInsert: {
+            ...station,
+            status: "active",
+            station_db_uri: station.station_db_uri || "",
+            last_heartbeat_at: new Date()
+          }
+        },
         { upsert: true }
       )
     })

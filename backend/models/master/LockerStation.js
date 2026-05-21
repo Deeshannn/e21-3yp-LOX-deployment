@@ -3,9 +3,13 @@ const mongoose = require("mongoose")
 const lockerStationSchema = new mongoose.Schema({
   station_id: { type: String, required: true, unique: true },
   name:       { type: String, required: true },
+  locker_count: { type: Number, required: true, min: 1 },
+  estimated_members: { type: Number, default: 0, min: 0 },
+  notes: { type: String, default: "" },
+  station_db_uri: { type: String, default: "" },
   status:     {
     type:    String,
-    enum:    ["active", "maintenance", "offline"],
+    enum:    ["active", "maintenance", "offline", "deleted"],
     default: "active"
   },
   location: {
