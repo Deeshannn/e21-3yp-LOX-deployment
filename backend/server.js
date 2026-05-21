@@ -19,6 +19,7 @@ app.use("/api/memberships",      require("./routes/memberships"))
 app.use("/api/lockers",          require("./routes/lockers"))
 app.use("/api/queue",            require("./routes/queue"))
 app.use("/api/station-settings", require("./routes/stationSettings"))
+app.use("/api/chat",             require("./routes/chat"))
 
 const bootstrap = async () => {
   await connectMasterDB()
