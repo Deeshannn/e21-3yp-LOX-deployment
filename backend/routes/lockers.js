@@ -82,6 +82,54 @@ router.post("/add", async (req, res) => {
 
 
 // ─────────────────────────────────────────────────────────
+// GET /api/lockers/reserved-details/:station_id
+// Returns full details of the locker currently reserved by user
+// ─────────────────────────────────────────────────────────
+router.get("/reserved-details/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params
+    const { user_id }    = req.query
+
+    if (!user_id) {
+      return res.status(400).json({ message: "user_id is required as a query parameter" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker = getLockerModel(station_id)
+    const locker = await Locker.findOne({ reserved_by: user_id })
+
+    if (!locker) {
+      return res.status(404).json({ message: "You have no reserved locker at this station." })
+    }
+
+    res.status(200).json({
+      message: `Reserved locker details for user ${user_id} at station ${station_id}`,
+      locker: {
+        locker_id:            locker.locker_id,
+        lock_state:           locker.lock_state,
+        door_state:           locker.door_state,
+        state:                locker.state,
+        availability:         locker.availability,
+        reserved_by:          locker.reserved_by,
+        reserved_at:          locker.reserved_at,
+        overdue_at:           locker.overdue_at,
+        release_requested:    locker.release_requested,
+        release_requested_at: locker.release_requested_at,
+        last_reported_at:     locker.last_reported_at
+      }
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
 // GET /api/lockers/:station_id
 // ─────────────────────────────────────────────────────────
 router.get("/:station_id", async (req, res) => {
@@ -609,6 +657,70 @@ router.post("/unlock", async (req, res) => {
 
     res.status(200).json({
       message: `Unlock command sent to locker ${locker_id}`,
+      locker: {
+        locker_id: locker.locker_id,
+        state:     locker.state
+      }
+    })
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+
+// ─────────────────────────────────────────────────────────
+// POST /api/lockers/lock
+// Owner manually locks their reserved locker
+// Only valid when locker is in unlock_close or unlock_open state
+// ─────────────────────────────────────────────────────────
+router.post("/lock", async (req, res) => {
+  try {
+    const { station_id, user_id, locker_id } = req.body
+
+    if (!station_id || !user_id || !locker_id) {
+      return res.status(400).json({ message: "station_id, user_id and locker_id are required" })
+    }
+
+    const member = await verifyMembership(station_id, user_id)
+    if (!member) {
+      return res.status(403).json({ message: "Access denied. You are not an active member of this station." })
+    }
+
+    const Locker = getLockerModel(station_id)
+    const locker = await Locker.findOne({ locker_id })
+    if (!locker) {
+      return res.status(404).json({ message: `Locker ${locker_id} not found` })
+    }
+
+    // Only the owner can lock
+    if (!locker.reserved_by || locker.reserved_by.toString() !== user_id.toString()) {
+      return res.status(403).json({ message: "You can only lock your own reserved locker" })
+    }
+
+    // Only valid from unlock_close or unlock_open states
+    if (!["unlock_close", "unlock_open"].includes(locker.state)) {
+      return res.status(400).json({
+        message: `Locker can only be locked from unlock_close or unlock_open state. Current state: ${locker.state}`
+      })
+    }
+
+    locker.lock_state = "locked"
+    locker.state = "lock_close"
+    await locker.save()
+
+    // Send LOCK command to hardware
+    try {
+      await publishCommand(station_id, locker_id, "LOCK")
+    } catch {
+      // No hardware — update state directly (already set)
+      locker.lock_state = "locked"
+      locker.state      = "lock_close"
+      await locker.save()
+    }
+
+    res.status(200).json({
+      message: `Lock command sent to locker ${locker_id}`,
       locker: {
         locker_id: locker.locker_id,
         state:     locker.state
