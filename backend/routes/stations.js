@@ -56,7 +56,7 @@ router.get("/", async (req, res) => {
   try {
     // Fetch all active stations from Master DB
     const stations = await LockerStation.find({ status: "active" })
-      .select("station_id name location.city status -_id")
+      .select("station_id name location.city location.address location.district location.latitude location.longitude status -_id")
 
     // For each station, get locker count from its station DB
     const result = await Promise.all(
@@ -72,7 +72,11 @@ router.get("/", async (req, res) => {
           station_id:   station.station_id,
           name:         station.name,
           main_town:    station.location.city,
-          locker_count
+          address:      station.location.address,
+          district:     station.location.district,
+          locker_count,
+          latitude:     station.location.latitude,
+          longitude:    station.location.longitude
         }
       })
     )
