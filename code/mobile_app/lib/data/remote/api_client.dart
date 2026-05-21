@@ -310,4 +310,94 @@ class ApiClient {
       rethrow;
     }
   }
+
+  Future<Map<String, dynamic>> fetchLockerTimeRemaining(
+    String stationId,
+  ) async {
+    debugPrint('📡 Fetching locker time remaining for station: $stationId');
+    try {
+      if (stationId.isEmpty) {
+        throw const ApiError('Missing station ID for time remaining request');
+      }
+      final query = userId.isNotEmpty ? '?user_id=$userId' : '';
+      return await _request(
+        'GET',
+        '/api/lockers/time-remaining/$stationId$query',
+      );
+    } catch (e) {
+      debugPrint('❌ Error fetching locker time remaining: $e');
+      rethrow;
+    }
+  }
+
+  Future<Locker> unlockLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Unlocking locker: $lockerId at station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/lockers/unlock',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+          'locker_id': lockerId,
+        },
+      );
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error unlocking locker: $e');
+      rethrow;
+    }
+  }
+
+  Future<Locker> lockLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Locking locker: $lockerId at station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/lockers/lock',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+          'locker_id': lockerId,
+        },
+      );
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error locking locker: $e');
+      rethrow;
+    }
+  }
+
+  Future<Locker> requestReleaseLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Requesting locker release: $lockerId at station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/lockers/request-release',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+        },
+      );
+      final lockerData = <String, dynamic>{
+        'locker_id': lockerId,
+        ...?payload['locker'] as Map<String, dynamic>?,
+      };
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error requesting locker release: $e');
+      rethrow;
+    }
+  }
 }

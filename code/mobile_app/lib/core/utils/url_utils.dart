@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 String normalizeApiBaseUrl(String input) {
   final value = input.trim();
@@ -8,7 +9,8 @@ String normalizeApiBaseUrl(String input) {
   if (uri == null || uri.host.isEmpty || uri.scheme.isEmpty) return value;
 
   /// IP address hardcoded into the Android Emulator's virtual router.
-  if (Platform.isAndroid &&
+  if (!kIsWeb &&
+      Platform.isAndroid &&
       (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
     return uri.replace(host: '10.0.2.2').toString();
   }
