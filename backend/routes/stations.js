@@ -166,11 +166,41 @@ router.get("/", async (req, res) => {
   }
 })
 
+// GET /api/stations/me
+router.get("/me", authenticateToken, requireRole("sub_admin"), async (req, res) => {
+  try {
+    const stationId = normalizeStationId(req.user.station_id)
+
+    if (!stationId) {
+      return res.status(403).json({ message: "This account is not assigned to a locker station" })
+    }
+
+    const station = await LockerStation.findOne({ station_id: stationId, status: "active" })
+
+    if (!station) {
+      return res.status(404).json({ message: "Assigned locker station was not found" })
+    }
+
+    res.status(200).json({
+      message: "Assigned station retrieved successfully",
+      station: await respondStation(station)
+    })
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
 // GET /api/stations/:station_id
-router.get("/:station_id", async (req, res) => {
+router.get("/:station_id", authenticateToken, async (req, res) => {
   try {
     const { station_id } = req.params
-    const station = await LockerStation.findOne({ station_id: normalizeStationId(station_id) })
+    const normalizedStationId = normalizeStationId(station_id)
+
+    if (req.user.role !== "super_admin" && normalizeStationId(req.user.station_id) !== normalizedStationId) {
+      return res.status(403).json({ message: "You can only access your assigned locker station" })
+    }
+
+    const station = await LockerStation.findOne({ station_id: normalizedStationId })
 
     if (!station) {
       return res.status(404).json({ message: "Station not found" })

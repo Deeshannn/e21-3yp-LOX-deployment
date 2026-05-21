@@ -21,6 +21,7 @@ const signAuthToken = (user) => jwt.sign(
     role: user.role,
     status: user.status,
     station_id: user.station_id || null,
+    station_name: user.station_name || null,
     locker_id: user.locker_id || null
   },
   JWT_SECRET,
@@ -92,8 +93,8 @@ const validateRegistrationPayload = async (payload) => {
   }
 
   if (role === "sub_admin") {
-    if (!station_id || !station_name || !locker_id) {
-      return { error: "station_id, station_name and locker_id are required for sub admin requests" }
+    if (!station_id || !locker_id) {
+      return { error: "station_id and locker_id are required for sub admin requests" }
     }
 
     const station = await LockerStation.findOne({ station_id })
@@ -116,7 +117,7 @@ const validateRegistrationPayload = async (payload) => {
       phone: String(phone).trim(),
       password,
       station_id: station_id ? String(station_id).trim() : null,
-      station_name: station_name ? String(station_name).trim() : null,
+      station_name: role === "sub_admin" ? station.name : station_name ? String(station_name).trim() : null,
       locker_id: locker_id ? String(locker_id).trim() : null,
       document_name: document_name ? String(document_name).trim() : null
     }
