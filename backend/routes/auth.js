@@ -12,6 +12,7 @@ const ADMIN_ROLES = ["sub_admin", "super_admin"]
 const JWT_SECRET = process.env.JWT_SECRET || "15e876bb86f907b8eac4773c7822d76dfbb503658850bdb9bdcdaac6f614afb7"
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase()
+const normalizeText = (value) => String(value || "").trim()
 
 const signAuthToken = (user) => jwt.sign(
   {
@@ -60,6 +61,20 @@ const toUserDto = (user) => ({
   created_at: user.created_at
 })
 
+const ADMIN_MANAGEABLE_ROLES = ["super_admin", "sub_admin"]
+
+const toManagedAdminDto = (user, stationName) => ({
+  user_id: user._id,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  status: user.status,
+  station_id: user.station_id || null,
+  station_name: stationName || null,
+  created_at: user.created_at,
+  approved_at: user.approved_at || null
+})
+
 const validateRegistrationPayload = async (payload) => {
   const {
     role,
@@ -75,6 +90,7 @@ const validateRegistrationPayload = async (payload) => {
     locker_id,
     document_name
   } = payload
+  let stationName = null
 
   if (!ADMIN_ROLES.includes(role)) {
     return { error: "role must be either sub_admin or super_admin" }
@@ -105,6 +121,8 @@ const validateRegistrationPayload = async (payload) => {
     if (station.status !== "active") {
       return { error: "Selected locker station is not active" }
     }
+
+    stationName = station.name
   }
 
   return {
@@ -117,7 +135,7 @@ const validateRegistrationPayload = async (payload) => {
       phone: String(phone).trim(),
       password,
       station_id: station_id ? String(station_id).trim() : null,
-      station_name: role === "sub_admin" ? station.name : station_name ? String(station_name).trim() : null,
+      station_name: role === "sub_admin" ? stationName : station_name ? String(station_name).trim() : null,
       locker_id: locker_id ? String(locker_id).trim() : null,
       document_name: document_name ? String(document_name).trim() : null
     }
@@ -243,6 +261,97 @@ router.get("/notifications", authenticateToken, requireRole("super_admin"), asyn
       message: "Notifications retrieved successfully",
       unread_count: pending.length,
       requests: requests.map(toRequestDto)
+    })
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+// GET /api/auth/admins?role=sub_admin|super_admin|all&search=...
+router.get("/admins", authenticateToken, requireRole("super_admin"), async (req, res) => {
+  try {
+    const requestedRole = normalizeText(req.query.role).toLowerCase()
+    const search = normalizeText(req.query.search)
+
+    const query = {
+      role: { $in: ADMIN_MANAGEABLE_ROLES },
+      status: { $ne: "disabled" }
+    }
+
+    if (requestedRole === "sub_admin" || requestedRole === "super_admin") {
+      query.role = requestedRole
+    }
+
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const pattern = new RegExp(escapedSearch, "i")
+      query.$or = [
+        { name: pattern },
+        { email: pattern },
+        { station_name: pattern },
+        { station_id: pattern }
+      ]
+    }
+
+    const users = await User.find(query)
+      .sort({ role: 1, created_at: -1 })
+      .select("name email role status station_id station_name created_at approved_at")
+
+    const stationIds = Array.from(new Set(users
+      .map((user) => normalizeText(user.station_id).toUpperCase())
+      .filter(Boolean)))
+
+    let stationNameById = new Map()
+    if (stationIds.length > 0) {
+      const stations = await LockerStation.find({ station_id: { $in: stationIds } })
+        .select("station_id name")
+        .lean()
+
+      stationNameById = new Map(stations.map((station) => [normalizeText(station.station_id).toUpperCase(), station.name]))
+    }
+
+    const admins = users.map((user) => {
+      const stationId = normalizeText(user.station_id).toUpperCase()
+      const stationName = user.station_name || (stationId ? stationNameById.get(stationId) : null) || null
+      return toManagedAdminDto(user, stationName)
+    })
+
+    const summary = admins.reduce((acc, admin) => {
+      if (admin.role === "super_admin") acc.super_admins += 1
+      if (admin.role === "sub_admin") acc.sub_admins += 1
+      return acc
+    }, { super_admins: 0, sub_admins: 0 })
+
+    res.status(200).json({
+      message: "Admin accounts retrieved successfully",
+      count: admins.length,
+      summary,
+      admins
+    })
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+// DELETE /api/auth/admins/:user_id
+router.delete("/admins/:user_id", authenticateToken, requireRole("super_admin"), async (req, res) => {
+  try {
+    const { user_id } = req.params
+
+    const targetUser = await User.findById(user_id)
+    if (!targetUser) {
+      return res.status(404).json({ message: "Admin account not found" })
+    }
+
+    if (targetUser.role !== "sub_admin") {
+      return res.status(400).json({ message: "Only sub admin accounts can be removed from this page" })
+    }
+
+    await User.findByIdAndDelete(user_id)
+
+    res.status(200).json({
+      message: "Sub admin removed successfully",
+      removed_user_id: user_id
     })
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message })
