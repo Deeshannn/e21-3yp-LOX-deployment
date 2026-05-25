@@ -1,0 +1,22 @@
+ESP32 (STN-001)
+├── Locker L-001 → relay pin 23, sensor pin 4
+├── Locker L-002 → relay pin 22, sensor pin 5
+├── Locker L-003 → relay pin 21, sensor pin 18
+└── Locker L-004 → relay pin 19, sensor pin 19
+
+locker/STN-001/L-001/control   ← server sends LOCK/UNLOCK
+locker/STN-001/L-001/state     ← ESP32 sends LOCKED/UNLOCKED/OPEN/CLOSED
+
+locker/STN-001/L-002/control
+locker/STN-001/L-002/state
+...
+
+on .cpp
+// Add a locker: { lockerID, relayPin, sensorPin }
+LockerConfig lockers[] = {
+  { "L-001", 23, 4  },
+  { "L-002", 22, 5  },
+  { "L-003", 21, 18 },
+  { "L-004", 19, 19 }
+};
+
