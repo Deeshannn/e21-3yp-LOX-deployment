@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../../data/models/locker.dart';
+import '../../../../../data/models/locker.dart';
 
 class StationLockerCard extends StatelessWidget {
   const StationLockerCard({

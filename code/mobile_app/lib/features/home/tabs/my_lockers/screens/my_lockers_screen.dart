@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../../core/errors/api_error.dart';
 import '../../../../../../data/models/locker.dart';
+import '../../../../../../data/models/station.dart';
 import '../../../../../../data/remote/api_client.dart';
 import '../widgets/empty_card.dart';
 import '../widgets/error_card.dart';
@@ -15,10 +16,14 @@ class MyLockersScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.selectedStationId,
+    required this.stations,
+    required this.onStationResolved,
   });
 
   final ApiClient client;
   final String selectedStationId;
+  final List<Station> stations;
+  final ValueChanged<String> onStationResolved;
 
   @override
   State<MyLockersScreen> createState() => _MyLockersScreenState();
@@ -35,6 +40,7 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
 
   Locker? _locker;
   DateTime? _freeLimitEndsAt;
+  String? _activeStationId;
   bool _loading = true;
   String? _error;
   Timer? _pollTimer;
@@ -61,7 +67,8 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
   @override
   void didUpdateWidget(covariant MyLockersScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedStationId != widget.selectedStationId) {
+    if (oldWidget.selectedStationId != widget.selectedStationId ||
+        oldWidget.stations != widget.stations) {
       _loadLockerDetails();
     }
   }
@@ -74,11 +81,17 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
   }
 
   Future<void> _loadLockerDetails({bool silent = false}) async {
-    if (widget.selectedStationId.isEmpty) {
+    final candidateStationIds = <String>{
+      if (widget.selectedStationId.isNotEmpty) widget.selectedStationId,
+      ...widget.stations.map((station) => station.id),
+    }.toList();
+
+    if (candidateStationIds.isEmpty) {
       if (!mounted) return;
       setState(() {
         _locker = null;
         _freeLimitEndsAt = null;
+        _activeStationId = null;
         _loading = false;
         _error = 'No station selected yet.';
       });
@@ -93,32 +106,73 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
     }
 
     try {
-      final locker = await widget.client.fetchReservedLockerDetails(widget.selectedStationId);
-      
+      Locker? locker;
       DateTime? freeLimitEndsAt;
-      try {
-        final timingPayload = await widget.client.fetchLockerTimeRemaining(widget.selectedStationId);
-        // Explicitly check if time_limit is disabled
-        if (timingPayload['time_limit'] == true) {
-          freeLimitEndsAt = DateTime.tryParse(timingPayload['expires_at']?.toString() ?? '');
+      String? resolvedStationId;
+
+      for (final stationId in candidateStationIds) {
+        try {
+          final candidateLocker = await widget.client.fetchReservedLockerDetails(
+            stationId,
+          );
+          resolvedStationId = stationId;
+          locker = candidateLocker;
+
+          try {
+            final timingPayload = await widget.client.fetchLockerTimeRemaining(
+              stationId,
+            );
+            if (timingPayload['time_limit'] == true) {
+              freeLimitEndsAt = DateTime.tryParse(
+                timingPayload['expires_at']?.toString() ?? '',
+              );
+            }
+          } catch (_) {
+            freeLimitEndsAt = null;
+          }
+          break;
+        } catch (error) {
+          final message = error is ApiError
+              ? error.message.toLowerCase()
+              : error.toString().toLowerCase();
+          if (message.contains('no reserved locker') ||
+              message.contains('access denied')) {
+            continue;
+          }
+          rethrow;
         }
-      } catch (_) {
-        freeLimitEndsAt = null;
       }
 
       if (!mounted) return;
+      if (locker == null || resolvedStationId == null) {
+        setState(() {
+          _locker = null;
+          _freeLimitEndsAt = null;
+          _activeStationId = null;
+          _loading = false;
+          _error = null;
+        });
+        return;
+      }
+
       setState(() {
         _locker = locker;
         _freeLimitEndsAt = freeLimitEndsAt;
+        _activeStationId = resolvedStationId;
         _loading = false;
         _error = null;
       });
+
+      if (resolvedStationId != widget.selectedStationId) {
+        widget.onStationResolved(resolvedStationId);
+      }
     } catch (error) {
       if (!mounted) return;
       final message = error is ApiError ? error.message : error.toString();
       setState(() {
         _locker = null;
         _freeLimitEndsAt = null;
+        _activeStationId = null;
         _loading = false;
         _error = message.toLowerCase().contains('no reserved locker') ? null : message;
       });
@@ -167,13 +221,15 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
 
   Future<void> _unlockLocker() async {
     if (_locker == null || _lockingUnlocking) return;
+    final stationId = _activeStationId ?? widget.selectedStationId;
+    if (stationId.isEmpty) return;
     setState(() {
       _lockingUnlocking = true;
       _actionMessage = null;
     });
     try {
       final updatedLocker = await widget.client.unlockLocker(
-        stationId: widget.selectedStationId,
+        stationId: stationId,
         lockerId: _locker!.id,
       );
       if (!mounted) return;
@@ -197,13 +253,15 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
 
   Future<void> _lockLocker() async {
     if (_locker == null || _lockingUnlocking) return;
+    final stationId = _activeStationId ?? widget.selectedStationId;
+    if (stationId.isEmpty) return;
     setState(() {
       _lockingUnlocking = true;
       _actionMessage = null;
     });
     try {
       final updatedLocker = await widget.client.lockLocker(
-        stationId: widget.selectedStationId,
+        stationId: stationId,
         lockerId: _locker!.id,
       );
       if (!mounted) return;
@@ -227,13 +285,15 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
 
   Future<void> _requestReleaseLocker() async {
     if (_locker == null || _releasing) return;
+    final stationId = _activeStationId ?? widget.selectedStationId;
+    if (stationId.isEmpty) return;
     setState(() {
       _releasing = true;
       _actionMessage = null;
     });
     try {
       final updatedLocker = await widget.client.requestReleaseLocker(
-        stationId: widget.selectedStationId,
+        stationId: stationId,
         lockerId: _locker!.id,
       );
       if (!mounted) return;
@@ -259,6 +319,7 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final freeLimitEndsAt = _freeLimitEndsAt;
+    final stationLabel = (_activeStationId ?? widget.selectedStationId).toUpperCase();
     
     // Logic to determine timing state
     final bool hasLimit = freeLimitEndsAt != null;
@@ -329,7 +390,7 @@ class _MyLockersScreenState extends State<MyLockersScreen> {
 
                         // Station Name
                         Text(
-                          widget.selectedStationId.toUpperCase(),
+                          stationLabel,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: _muted,

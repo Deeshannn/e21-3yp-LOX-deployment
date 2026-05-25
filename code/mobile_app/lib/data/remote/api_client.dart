@@ -55,6 +55,12 @@ class ApiClient {
             headers: headers,
             body: jsonEncode(body ?? const {}),
           );
+          case 'PUT':
+          response = await http.put(
+            uri,
+            headers: headers,
+            body: jsonEncode(body ?? const {}),
+          );
           break;
         default:
           throw StateError('Unsupported method: $method');
@@ -66,9 +72,9 @@ class ApiClient {
     }
 
     // Debug: Log raw response
-    debugPrint('🔍 API Response Status: ${response.statusCode}');
-    debugPrint('🔍 API Response Body: ${response.body}');
-    debugPrint('🔍 API Request: $method $uri');
+    // debugPrint('🔍 API Response Status: ${response.statusCode}');
+    // debugPrint('🔍 API Response Body: ${response.body}');
+    // debugPrint('🔍 API Request: $method $uri');
 
     Map<String, dynamic> payload;
     try {
@@ -137,7 +143,7 @@ class ApiClient {
     debugPrint('📡 Fetching user profile...');
     try {
       final payload = await _request('GET', '/api/users/me');
-      debugPrint('✅ User profile fetched');
+      // debugPrint('✅ User profile fetched');
       return UserProfile.fromJson(
         payload['user'] as Map<String, dynamic>? ?? const {},
       );
@@ -217,7 +223,7 @@ class ApiClient {
   /// Fetch membership status for the current user at [stationId].
   /// Returns a string: 'none' | 'pending' | 'member'
   Future<String> fetchMembershipStatus(String stationId) async {
-    debugPrint('📡 Fetching membership status for $stationId');
+    // debugPrint('📡 Fetching membership status for $stationId');
     try {
       if (stationId.isEmpty) {
         throw const ApiError(
@@ -288,6 +294,7 @@ class ApiClient {
   /// Fetch full details of the locker currently reserved by the logged-in user.
   Future<Locker> fetchReservedLockerDetails(String stationId) async {
     debugPrint('📡 Fetching reserved locker details for station: $stationId');
+    debugPrint('Fetching for user id: $userId');
     try {
       if (stationId.isEmpty) {
         throw const ApiError('Missing station ID for locker details request');
@@ -301,12 +308,112 @@ class ApiClient {
         'GET',
         '/api/lockers/reserved-details/$stationId?user_id=$userId',
       );
+      debugPrint("payload is:  $payload");
 
       final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
-      debugPrint('✅ Reserved locker details loaded');
+      debugPrint("✅ Reserved locker details loaded: $lockerData");
       return Locker.fromJson(lockerData);
     } catch (e) {
       debugPrint('❌ Error fetching reserved locker details: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch the current free-limit timing for the user's reserved locker.
+  Future<Map<String, dynamic>> fetchLockerTimeRemaining(String stationId) async {
+    try {
+      if (stationId.isEmpty) {
+        throw const ApiError('Missing station ID for locker time request');
+      }
+
+      if (userId.isEmpty) {
+        throw const ApiError('Missing user ID for locker time request');
+      }
+
+      return _request(
+        'GET',
+        '/api/lockers/time-remaining/$stationId?user_id=$userId',
+      );
+    } catch (e) {
+      debugPrint('❌ Error fetching locker time remaining: $e');
+      rethrow;
+    }
+  }
+
+  /// Unlock the user's reserved locker.
+  /// Only valid when locker is in lock_close state.
+  Future<Locker> unlockLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Unlocking locker: $lockerId at station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/lockers/unlock',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+          'locker_id': lockerId,
+        },
+      );
+      debugPrint('✅ Locker unlocked successfully');
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error unlocking locker: $e');
+      rethrow;
+    }
+  }
+
+  /// Lock the user's reserved locker.
+  /// Only valid when locker is in unlock_close or unlock_open state.
+  Future<Locker> lockLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Locking locker: $lockerId at station: $stationId');
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/lockers/lock',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+          'locker_id': lockerId,
+        },
+      );
+      debugPrint('✅ Locker locked successfully');
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error locking locker: $e');
+      rethrow;
+    }
+  }
+
+  /// Request release of the user's reserved locker.
+  /// This allows the user to indicate they want to release their locker.
+  Future<Locker> requestReleaseLocker({
+    required String stationId,
+    required String lockerId,
+  }) async {
+    debugPrint('📡 Requesting release for locker: $lockerId at station: $stationId by user id $userId');
+    try {
+      final payload = await _request(
+        'PUT',
+        '/api/lockers/release',
+        body: {
+          'station_id': stationId,
+          'user_id': userId,
+          'locker_id': lockerId,
+        },
+      );
+      debugPrint('✅ Release request sent successfully');
+      final lockerData = payload['locker'] as Map<String, dynamic>? ?? const {};
+      return Locker.fromJson(lockerData);
+    } catch (e) {
+      debugPrint('❌ Error requesting release: $e');
       rethrow;
     }
   }

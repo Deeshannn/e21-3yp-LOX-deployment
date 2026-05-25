@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../data/local/local_store.dart';
@@ -194,6 +195,16 @@ class _HomeScreenState extends State<HomeScreen> {
             MyLockersScreen(
               client: widget.session.client,
               selectedStationId: _selectedStationId,
+              stations: _stations,
+              onStationResolved: (stationId) {
+                if (_selectedStationId == stationId) {
+                  return;
+                }
+                setState(() {
+                  _selectedStationId = stationId;
+                });
+                unawaited(LocalStore.saveSelectedStation(stationId));
+              },
             ),
             AccountScreen(user: widget.session.user, onLogout: widget.onLogout),
           ],
