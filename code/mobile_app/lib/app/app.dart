@@ -64,7 +64,14 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
       if (!mounted) return;
       setState(() {
         // Session restored successfully. Update state and trigger a rebuild.
-        _session = SessionData(client: client, user: user);
+        _session = SessionData(
+          client: ApiClient(
+            baseUrl: _baseUrl,
+            token: token,
+            userId: user.id,
+          ),
+          user: user,
+        );
         _loading = false;
         _bootError = null;
       });
@@ -89,6 +96,7 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
       final client = ApiClient(
         baseUrl: _baseUrl, // always from AppConfig
         token: result.token,
+        userId: result.user.id,
       );
 
       // Keep your existing LocalStore method. Store baseUrl too if your model requires it.
