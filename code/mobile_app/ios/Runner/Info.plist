@@ -68,5 +68,7 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs location to find nearby locker stations.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>This app needs Face ID or Touch ID permission to enable secure, fast login and biometric verification when unlocking your locker.</string>
 </dict>
 </plist>

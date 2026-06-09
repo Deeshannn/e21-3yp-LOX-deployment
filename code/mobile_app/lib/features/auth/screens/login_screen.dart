@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/url_utils.dart';
 import '../../../data/models/auth_result.dart';
 import '../../../data/remote/api_client.dart';
+import '../../../core/services/biometric_service.dart';
 
 /// The user login interface for the Smart Locker application.
 ///
@@ -43,12 +44,14 @@ class _LoginScreenState extends State<LoginScreen> {
   late final TextEditingController _passwordController;
 
   bool _submitting = false; // Tracks network state to disable buttons and show a loading spinner
+  bool _isBiometricsAvailable = false;
 
   @override
   void initState() {
     super.initState();
     _emailController = TextEditingController();
     _passwordController = TextEditingController();
+    _checkBiometrics();
   }
 
   @override
@@ -56,6 +59,53 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkBiometrics() async {
+    final enabled = await BiometricService.instance.isBiometricEnabled();
+    final canAuth = await BiometricService.instance.canAuthenticate();
+    if (mounted) {
+      setState(() {
+        _isBiometricsAvailable = enabled && canAuth;
+      });
+      if (_isBiometricsAvailable) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _biometricLogin();
+        });
+      }
+    }
+  }
+
+  Future<void> _biometricLogin() async {
+    final credentials = await BiometricService.instance.getCredentials();
+    if (credentials == null) return;
+
+    final authenticated = await BiometricService.instance.authenticate(
+      'Scan your fingerprint/face to sign in'
+    );
+    if (authenticated) {
+      final email = credentials['email']!;
+      final password = credentials['password']!;
+      
+      if (mounted) {
+        // Autofill fields
+        _emailController.text = email;
+        _passwordController.text = password;
+        
+        setState(() => _submitting = true);
+      }
+      try {
+        final baseUrl = normalizeApiBaseUrl(AppConstants.defaultApiBaseUrl);
+        final result = await ApiClient(
+          baseUrl: baseUrl,
+          token: '',
+        ).login(email: email, password: password);
+        await widget.onAuthSuccess(result);
+      } catch (e) {
+        if (mounted) _showError(e.toString());
+      }
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   void _showError(String message) {
@@ -80,6 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
         baseUrl: baseUrl,
         token: '',
       ).login(email: email, password: password);
+
+      // Save/update credentials for biometric login if enabled
+      final isBioEnabled = await BiometricService.instance.isBiometricEnabled();
+      if (isBioEnabled) {
+        await BiometricService.instance.saveCredentials(email, password);
+      }
+
       await widget.onAuthSuccess(result);
     } catch (e) {
       if (mounted) _showError(e.toString());
@@ -188,37 +245,67 @@ class _LoginScreenState extends State<LoginScreen> {
               hintColor: AppColors.textHint,
             ),
             const SizedBox(height: 32),
-            SizedBox(
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _submitting ? null : _login,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.olive,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: AppColors.olive.withOpacity(0.6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  elevation: 0,
-                ),
-                child: _submitting
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _submitting ? null : _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.olive,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: AppColors.olive.withOpacity(0.6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(32),
                         ),
-                      )
-                    : const Text(
-                        'SIGN IN',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.8,
+                        elevation: 0,
+                      ),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'SIGN IN',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.8,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+                if (_isBiometricsAvailable) ...[
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: _submitting ? null : _biometricLogin,
+                    borderRadius: BorderRadius.circular(28),
+                    child: Container(
+                      height: 56,
+                      width: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.fieldBackground,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.olive.withOpacity(0.2),
+                          width: 1.5,
                         ),
                       ),
-              ),
+                      child: const Icon(
+                        Icons.fingerprint_rounded,
+                        color: AppColors.olive,
+                        size: 32,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
             // const SizedBox(height: 28),
             // const Center(

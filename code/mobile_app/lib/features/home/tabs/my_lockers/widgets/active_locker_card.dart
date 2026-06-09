@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../../data/models/locker.dart';
 import '../../../../../data/remote/api_client.dart';
 import '../../../../../core/theme/app_colors.dart';
+import '../../../../../core/services/biometric_service.dart';
 
 class ActiveLockerCard extends StatefulWidget {
   const ActiveLockerCard({
@@ -40,6 +41,24 @@ class _ActiveLockerCardState extends State<ActiveLockerCard> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _onUnlockPressed() async {
+    final isEnabled = await BiometricService.instance.isBiometricEnabled();
+    if (isEnabled) {
+      final authenticated = await BiometricService.instance.authenticate(
+        'Confirm your identity to unlock locker ${widget.locker.code}',
+      );
+      if (!authenticated) {
+        _show('Biometric verification failed. Unlock cancelled.');
+        return;
+      }
+    }
+
+    _runCommand(
+      () => widget.client.unlockLocker(widget.locker.id),
+      'Locker unlocked successfully.',
+    );
   }
 
   @override
@@ -185,12 +204,7 @@ class _ActiveLockerCardState extends State<ActiveLockerCard> {
                       backgroundColor: AppColors.olive,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: _busy
-                        ? null
-                        : () => _runCommand(
-                              () => widget.client.unlockLocker(widget.locker.id),
-                              'Locker unlocked successfully.',
-                            ),
+                    onPressed: _busy ? null : _onUnlockPressed,
                     icon: const Icon(Icons.lock_open, size: 18),
                     label: const Text('Unlock', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),

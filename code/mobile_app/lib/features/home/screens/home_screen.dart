@@ -229,6 +229,11 @@ class _HomeScreenState extends State<HomeScreen> {
               freeCountForStation: _freeCountForStation,
               onOpenStation: _openStation,
               onRefresh: _loadData,
+              onGoToProfile: () {
+                setState(() {
+                  _tabIndex = 3; // Switches to Profile/Account tab
+                });
+              },
             ),
             RequestsScreen(
               requests: _requests,

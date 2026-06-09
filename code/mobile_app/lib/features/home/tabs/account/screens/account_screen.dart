@@ -4,7 +4,9 @@ import '../../../../../data/remote/api_client.dart';
 import '../../../../../core/theme/app_colors.dart';
 import 'profile_edit_screen.dart';
 
-class AccountScreen extends StatelessWidget {
+import '../../../../../core/services/biometric_service.dart';
+
+class AccountScreen extends StatefulWidget {
   const AccountScreen({
     super.key,
     required this.user,
@@ -19,9 +21,181 @@ class AccountScreen extends StatelessWidget {
   final Future<void> Function() onLogout;
 
   @override
+  State<AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends State<AccountScreen> {
+  bool _biometricEnabled = false;
+  bool _deviceSupportsBiometrics = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricSettings();
+  }
+
+  Future<void> _loadBiometricSettings() async {
+    final supports = await BiometricService.instance.canAuthenticate();
+    final enabled = await BiometricService.instance.isBiometricEnabled();
+    setState(() {
+      _deviceSupportsBiometrics = supports;
+      _biometricEnabled = enabled;
+    });
+  }
+
+  Future<void> _disableBiometrics() async {
+    await BiometricService.instance.clearCredentials();
+    setState(() {
+      _biometricEnabled = false;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Biometric authentication disabled.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _enableBiometrics() async {
+    final passwordController = TextEditingController();
+    bool checking = false;
+    String? errorMsg;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Confirm Password',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enter your password to enable biometric login.',
+                    style: TextStyle(fontSize: 14, color: AppColors.textLabel),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      errorText: errorMsg,
+                      prefixIcon: const Icon(Icons.vpn_key_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('CANCEL'),
+                ),
+                ElevatedButton(
+                  onPressed: checking
+                      ? null
+                      : () async {
+                          final password = passwordController.text;
+                          if (password.isEmpty) {
+                            setDialogState(() {
+                              errorMsg = 'Password cannot be empty.';
+                            });
+                            return;
+                          }
+
+                          setDialogState(() {
+                            checking = true;
+                            errorMsg = null;
+                          });
+
+                          try {
+                            // Test credentials by hitting login endpoint
+                            final baseUrl = widget.client.baseUrl;
+                            final authClient = ApiClient(baseUrl: baseUrl, token: '');
+                            await authClient.login(
+                              email: widget.user.email,
+                              password: password,
+                            );
+
+                            // Credentials are correct! Prompt for biometrics
+                            final authenticated = await BiometricService.instance.authenticate(
+                              'Confirm your biometrics to enable fingerprint login',
+                            );
+
+                            if (authenticated) {
+                              await BiometricService.instance.saveCredentials(
+                                widget.user.email,
+                                password,
+                              );
+                              await BiometricService.instance.setBiometricEnabled(true);
+                              if (!context.mounted) return;
+                              setState(() {
+                                _biometricEnabled = true;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Biometric authentication enabled successfully.'),
+                                ),
+                              );
+                              if (Navigator.canPop(context)) {
+                                Navigator.pop(context);
+                              }
+                            } else {
+                              setDialogState(() {
+                                checking = false;
+                                errorMsg = 'Biometric verification failed.';
+                              });
+                            }
+                          } catch (e) {
+                            setDialogState(() {
+                              checking = false;
+                              errorMsg = 'Invalid password or connection error.';
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.olive,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: checking
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('CONFIRM'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final hasBackground = user.homeBackgroundUrl.isNotEmpty;
-    final hasAvatar = user.avatarUrl.isNotEmpty;
+    final hasBackground = widget.user.homeBackgroundUrl.isNotEmpty;
+    final hasAvatar = widget.user.avatarUrl.isNotEmpty;
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -37,7 +211,7 @@ class AccountScreen extends StatelessWidget {
                 color: AppColors.olive.withOpacity(0.15),
                 image: hasBackground
                     ? DecorationImage(
-                        image: NetworkImage(user.homeBackgroundUrl),
+                        image: NetworkImage(widget.user.homeBackgroundUrl),
                         fit: BoxFit.cover,
                       )
                     : null,
@@ -62,7 +236,7 @@ class AccountScreen extends StatelessWidget {
                 child: CircleAvatar(
                   radius: 50,
                   backgroundColor: AppColors.fieldBackground,
-                  backgroundImage: hasAvatar ? NetworkImage(user.avatarUrl) : null,
+                  backgroundImage: hasAvatar ? NetworkImage(widget.user.avatarUrl) : null,
                   child: !hasAvatar
                       ? const Icon(Icons.person, size: 50, color: AppColors.textLabel)
                       : null,
@@ -80,17 +254,17 @@ class AccountScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                user.name,
+                widget.user.name,
                 style: const TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
                   color: AppColors.textMain,
                 ),
               ),
-              if (user.jobTitle.isNotEmpty) ...[
+              if (widget.user.jobTitle.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  user.jobTitle,
+                  widget.user.jobTitle,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -108,7 +282,7 @@ class AccountScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      user.role,
+                      widget.user.role,
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -149,14 +323,14 @@ class AccountScreen extends StatelessWidget {
                     ),
                   ),
                   const Divider(height: 24),
-                  _buildDetailItem(Icons.email_outlined, 'Email Address', user.email),
-                  if (user.phone.isNotEmpty) ...[
+                  _buildDetailItem(Icons.email_outlined, 'Email Address', widget.user.email),
+                  if (widget.user.phone.isNotEmpty) ...[
                     const SizedBox(height: 16),
-                    _buildDetailItem(Icons.phone_outlined, 'Phone Number', user.phone),
+                    _buildDetailItem(Icons.phone_outlined, 'Phone Number', widget.user.phone),
                   ],
-                  if (user.bio.isNotEmpty) ...[
+                  if (widget.user.bio.isNotEmpty) ...[
                     const SizedBox(height: 16),
-                    _buildDetailItem(Icons.info_outline, 'Biography', user.bio),
+                    _buildDetailItem(Icons.info_outline, 'Biography', widget.user.bio),
                   ],
                 ],
               ),
@@ -165,6 +339,83 @@ class AccountScreen extends StatelessWidget {
         ),
 
         const SizedBox(height: 24),
+
+        // Security Settings Card
+        if (_deviceSupportsBiometrics) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Card(
+              color: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.black.withOpacity(0.06)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'SECURITY SETTINGS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.4,
+                        color: AppColors.textLabel,
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.fingerprint_rounded, color: AppColors.olive, size: 24),
+                            SizedBox(width: 14),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Biometric Login',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Enable fingerprint/face access',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textLabel,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Switch.adaptive(
+                          value: _biometricEnabled,
+                          activeColor: AppColors.olive,
+                          onChanged: (val) {
+                            if (val) {
+                              _enableBiometrics();
+                            } else {
+                              _disableBiometrics();
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
 
         // Action panel
         Padding(
@@ -178,11 +429,11 @@ class AccountScreen extends StatelessWidget {
                   onPressed: () async {
                     final updated = await Navigator.of(context).push<UserProfile>(
                       MaterialPageRoute(
-                        builder: (_) => ProfileEditScreen(user: user, client: client),
+                        builder: (_) => ProfileEditScreen(user: widget.user, client: widget.client),
                       ),
                     );
                     if (updated != null) {
-                      onProfileUpdated(updated);
+                      widget.onProfileUpdated(updated);
                     }
                   },
                   icon: const Icon(Icons.edit_outlined),
@@ -204,7 +455,7 @@ class AccountScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton.icon(
-                  onPressed: onLogout,
+                  onPressed: widget.onLogout,
                   icon: const Icon(Icons.logout_rounded, color: Colors.white),
                   label: const Text(
                     'LOGOUT ACCOUNT',

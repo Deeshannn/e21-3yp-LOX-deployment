@@ -8,6 +8,7 @@ import '../../../../../data/models/station.dart';
 import '../widgets/location_pill.dart';
 import '../widgets/sort_pill.dart';
 import '../widgets/station_card.dart';
+import '../../../../../core/services/biometric_service.dart';
 
 /// Defines the available sorting strategies for the stations list.
 enum HomeStationSort { distance, availability }
@@ -31,6 +32,7 @@ class StationsView extends StatefulWidget {
     required this.freeCountForStation,
     required this.onOpenStation,
     required this.onRefresh,
+    this.onGoToProfile,
   });
 
   /// The master list of all available stations.
@@ -46,12 +48,152 @@ class StationsView extends StatefulWidget {
   final int Function(String stationId) freeCountForStation;
   final Future<void> Function(Station station) onOpenStation;
   final Future<void> Function() onRefresh;
+  final VoidCallback? onGoToProfile;
 
   @override
   State<StationsView> createState() => _StationsViewState();
 }
 
 class _StationsViewState extends State<StationsView> {
+  bool _promptShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndShowBiometricPrompt();
+    });
+  }
+
+  Future<void> _checkAndShowBiometricPrompt() async {
+    if (_promptShown) return;
+
+    final isEnabled = await BiometricService.instance.isBiometricEnabled();
+    if (isEnabled) return;
+
+    final canAuth = await BiometricService.instance.canAuthenticate();
+    if (!canAuth) return;
+
+    _promptShown = true;
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.rectangle,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF64674B).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.fingerprint_rounded,
+                    color: Color(0xFF64674B),
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Enable Biometrics',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF1F1E1B),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Enable biometrics in the profile screen to make your locker more secure.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFFA6A39B),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFA6A39B),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          'MAYBE LATER',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          if (widget.onGoToProfile != null) {
+                            widget.onGoToProfile!();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF64674B),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'ENABLE',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   static const _bg   = Color(0xFFF6F5F1);
   static const _muted = Color(0xFFA6A39B);
   static const _text  = Color(0xFF1F1E1B);
