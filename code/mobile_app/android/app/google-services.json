@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "853133891374",
+    "project_id": "lox-backup-firebase",
+    "storage_bucket": "lox-backup-firebase.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:853133891374:android:8b4c4c1285509b46d6ccbf",
+        "android_client_info": {
+          "package_name": "com.example.mobile_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkbxeTUbr4BgZKdP1rOrnQtSn4pkAjJCI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -7,6 +7,7 @@ class AppConstants {
   static const String defaultApiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     // defaultValue: 'http://127.0.0.1:3001/api',
-    defaultValue: 'http://10.30.7.70:3001/api'
+    // defaultValue: 'http://10.30.7.70:3001/api'
+    defaultValue: 'http://10.187.55.68:3001/api'
   );
 }
