@@ -12,7 +12,8 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, trim: true, default: '' },
     jobTitle: { type: String, trim: true, default: '' },
     bio: { type: String, trim: true, default: '' },
-    stationIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Station' }]
+    stationIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Station' }],
+    fcmToken: { type: String, default: '' }
   },
   { timestamps: true }
 );

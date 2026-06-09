@@ -10,6 +10,7 @@ import '../data/remote/api_client.dart';
 
 import '../features/auth/screens/auth_screen.dart';
 import '../features/home/screens/home_screen.dart';
+import '../core/services/notification_service.dart';
 
 /// The root widget of the Smart Locker application.
 ///
@@ -63,11 +64,11 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
       // the user might have closed the app or navigated away before the server responds
       if (!mounted) return;
       setState(() {
-        // Session restored successfully. Update state and trigger a rebuild.
         _session = SessionData(client: client, user: user);
         _loading = false;
         _bootError = null;
       });
+      FirebaseNotificationService.instance.initialize(client);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -99,6 +100,7 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
         _session = SessionData(client: client, user: result.user);
         _loading = false;
       });
+      FirebaseNotificationService.instance.initialize(client);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -110,6 +112,13 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
 
   /// Handle logout by clearing the saved token and resetting the session state.
   Future<void> _logout() async {
+    if (_session != null) {
+      try {
+        await _session!.client.updateFcmToken('');
+      } catch (e) {
+        debugPrint('Error clearing FCM token on logout: $e');
+      }
+    }
     await LocalStore.clearToken();
     if (!mounted) return;
     setState(() {
@@ -122,6 +131,7 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Smart Locker',
+      scaffoldMessengerKey: FirebaseNotificationService.instance.scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

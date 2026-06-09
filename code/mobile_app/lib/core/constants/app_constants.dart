@@ -6,8 +6,8 @@ class AppConstants {
   /// ex: flutter run --dart-define=API_BASE_URL=https://production.com/api
   static const String defaultApiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // defaultValue: 'http://127.0.0.1:3001/api',
+    defaultValue: 'http://172.20.10.7:3001/api',
     // defaultValue: 'http://10.30.7.70:3001/api'
-    defaultValue: 'http://10.187.55.68:3001/api'
+    // defaultValue: 'http://10.187.55.68:3001/api'
   );
 }

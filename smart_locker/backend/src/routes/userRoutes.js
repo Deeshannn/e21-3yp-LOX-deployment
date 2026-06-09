@@ -75,4 +75,24 @@ router.put(
   })
 );
 
+router.post(
+  '/fcm-token',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { fcmToken } = req.body;
+    const nextToken = fcmToken !== undefined ? String(fcmToken).trim() : '';
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.fcmToken = nextToken;
+    await user.save();
+    console.log(`[FCM] Updated token for user ${user.email} (ID: ${user._id}) to: ${nextToken ? nextToken.substring(0, 15) + '...' : 'empty'}`);
+
+    return success(res, { message: 'FCM token updated successfully' });
+  })
+);
+
 module.exports = router;

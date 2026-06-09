@@ -5,6 +5,7 @@ const Locker = require('../models/Locker');
 const { assignWaitingQueue } = require('../services/requestService');
 const { publishLockerBookingStatus, publishLockerSecurityIgnoreCommand, logEvent } = require('../services/mqttService');
 const { Roles } = require('../constants/enums');
+const { sendPushNotification } = require('../services/notificationService');
 
 function canAccessStation(user, stationId) {
   if (user.role === Roles.SUPER_ADMIN) {
@@ -49,6 +50,8 @@ const releaseLockerHandler = asyncHandler(async (req, res) => {
     return res.status(403).json({ message: 'Locker access denied' });
   }
 
+  const userIdToNotify = locker.currentUserId;
+
   locker.isBooked = false;
   locker.currentUserId = null;
   locker.activeRequestId = null;
@@ -56,6 +59,16 @@ const releaseLockerHandler = asyncHandler(async (req, res) => {
   await publishLockerBookingStatus(locker);
 
   await assignWaitingQueue(locker.stationId);
+
+  if (userIdToNotify) {
+    await sendPushNotification(
+      userIdToNotify,
+      'Locker Released',
+      'You have successfully released a locker.',
+      { type: 'LOCKER_RELEASED', lockerId: String(locker._id), lockerCode: locker.code }
+    );
+  }
+
   return success(res, { message: 'Locker released' });
 });
 

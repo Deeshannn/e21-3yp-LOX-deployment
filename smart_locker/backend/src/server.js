@@ -4,8 +4,10 @@ const { connectDatabase } = require('./config/database');
 const { seedSampleData } = require('./services/seedService');
 const { subscribeAllLockers } = require('./services/mqttService');
 const { startScheduler } = require('./services/scheduleService');
+const { initializeFirebase } = require('./config/firebase');
 
 async function startServer() {
+  initializeFirebase();
   await connectDatabase();
   await seedSampleData();
   await subscribeAllLockers();

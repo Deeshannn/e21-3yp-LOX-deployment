@@ -1,8 +1,10 @@
 const AccessRequest = require('../models/AccessRequest');
 const QueueEntry = require('../models/QueueEntry');
 const Locker = require('../models/Locker');
+const Station = require('../models/Station');
 const { RequestStatuses } = require('../constants/enums');
 const { logEvent, publishLockerBookingStatus } = require('./mqttService');
+const { sendPushNotification } = require('./notificationService');
 
 function canAccessStation(user, stationId) {
   if (user.role === 'SUPER_ADMIN') {
@@ -98,6 +100,21 @@ async function assignWaitingQueue(stationId) {
   await publishLockerBookingStatus(freeLocker);
 
   await logEvent(freeLocker, 'QUEUE_ASSIGNED', 'Queue front user assigned to locker', { requestId: request._id });
+
+  // Send push notification for queue assignment
+  const station = await Station.findById(stationId);
+  const stationName = station ? station.name : 'Station';
+  await sendPushNotification(
+    request.userId,
+    'Locker Assigned',
+    `Your queuing time is over. You have assigned a locker ${freeLocker.code} at ${stationName}.`,
+    {
+      type: 'LOCKER_ASSIGNED',
+      lockerId: String(freeLocker._id),
+      lockerCode: freeLocker.code,
+      requestId: String(request._id)
+    }
+  );
 }
 
 async function approveRequest(user, requestId) {
@@ -115,6 +132,8 @@ async function approveRequest(user, requestId) {
   }
 
   const freeLocker = await Locker.findOne({ stationId: request.stationId, isBooked: false }).sort({ createdAt: 1 });
+  const station = await Station.findById(request.stationId);
+  const stationName = station ? station.name : 'Station';
 
   request.approvedBy = user._id;
   request.approvedAt = new Date();
@@ -133,6 +152,14 @@ async function approveRequest(user, requestId) {
       });
     }
 
+    // Send push notification for queued request
+    await sendPushNotification(
+      request.userId,
+      'Locker Request Queued',
+      `Your request for a locker at ${stationName} has been approved and placed in the queue. You will be notified when a locker becomes available.`,
+      { type: 'LOCKER_QUEUED', requestId: String(request._id) }
+    );
+
     return { queued: true, request };
   }
 
@@ -147,6 +174,19 @@ async function approveRequest(user, requestId) {
   await publishLockerBookingStatus(freeLocker);
 
   await logEvent(freeLocker, 'REQUEST_APPROVED', 'User request approved and assigned', { requestId: request._id });
+
+  // Send push notification for approved & assigned request
+  await sendPushNotification(
+    request.userId,
+    'Locker Request Approved',
+    `Your request for a locker at ${stationName} has been approved. Locker ${freeLocker.code} is assigned to you.`,
+    {
+      type: 'LOCKER_ASSIGNED',
+      lockerId: String(freeLocker._id),
+      lockerCode: freeLocker.code,
+      requestId: String(request._id)
+    }
+  );
 
   return { queued: false, request, locker: freeLocker };
 }

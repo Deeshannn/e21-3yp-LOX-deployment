@@ -425,4 +425,12 @@ class ApiClient {
   Future<void> updateOrderStatus(String orderId, String status) async {
     await _request('PATCH', '/orders/$orderId/status', body: {'status': status});
   }
+
+  Future<void> updateFcmToken(String fcmToken) async {
+    await _request(
+      'POST',
+      '/users/fcm-token',
+      body: {'fcmToken': fcmToken},
+    );
+  }
 }

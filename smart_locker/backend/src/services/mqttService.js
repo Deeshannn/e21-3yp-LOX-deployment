@@ -4,6 +4,7 @@ const { env } = require('../config/env');
 const Locker = require('../models/Locker');
 const LockerEvent = require('../models/LockerEvent');
 const { LockerStates, DoorStates } = require('../constants/enums');
+const { sendPushNotification } = require('./notificationService');
 
 const mqttEnabled = Boolean(env.mqttServer && env.mqttUsername && env.mqttPassword);
 
@@ -261,6 +262,15 @@ if (client) {
           locker.lastSeenAt = new Date();
           await locker.save();
           await logEvent(locker, 'SECURITY_ALERT', locker.securityAlertMessage, { payload: value });
+
+          if (locker.currentUserId) {
+            await sendPushNotification(
+              locker.currentUserId,
+              `Security Alert - Locker ${locker.code}`,
+              locker.securityAlertMessage,
+              { type: 'SECURITY_ALERT', lockerId: String(locker._id), lockerCode: locker.code }
+            );
+          }
           return;
         }
 
