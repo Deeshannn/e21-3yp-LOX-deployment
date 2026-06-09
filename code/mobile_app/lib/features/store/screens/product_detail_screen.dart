@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../../data/models/product.dart';
 import '../../../../../data/models/user_profile.dart';
@@ -106,11 +108,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(color: Colors.black.withOpacity(0.04)),
                     ),
-                    child: Center(
-                      child: Icon(
-                        _getArtIcon(widget.product.artStyle),
-                        size: 72,
-                        color: AppColors.olive,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _buildProductImage(widget.product, size: 72),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -471,5 +476,83 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       default:
         return Icons.lock;
     }
+  }
+
+  Widget _buildProductImage(Product product, {double size = 72}) {
+    final imageUrl = product.imageUrl.trim();
+    if (imageUrl.isEmpty) {
+      return _buildFallbackIcon(product, size);
+    }
+
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(product, size),
+      );
+    }
+
+    if (imageUrl.startsWith('data:image/svg+xml')) {
+      try {
+        String svgString;
+        if (imageUrl.contains(';base64,')) {
+          final base64Str = imageUrl.split(';base64,')[1];
+          svgString = utf8.decode(base64.decode(base64Str));
+        } else {
+          final parts = imageUrl.split(',');
+          if (parts.length > 1) {
+            svgString = Uri.decodeComponent(parts.sublist(1).join(','));
+          } else {
+            svgString = '';
+          }
+        }
+        if (svgString.isNotEmpty) {
+          return SvgPicture.string(
+            svgString,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          );
+        }
+      } catch (_) {}
+    }
+
+    if (imageUrl.startsWith('data:image/') && imageUrl.contains(';base64,')) {
+      try {
+        final base64Str = imageUrl.split(';base64,')[1];
+        final bytes = base64.decode(base64Str);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      } catch (_) {}
+    }
+
+    // Try decoding as raw base64
+    try {
+      final bytes = base64.decode(imageUrl);
+      return Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      );
+    } catch (_) {}
+
+    return _buildFallbackIcon(product, size);
+  }
+
+  Widget _buildFallbackIcon(Product product, double size) {
+    return Center(
+      child: Icon(
+        _getArtIcon(product.artStyle),
+        size: size,
+        color: AppColors.olive.withOpacity(0.7),
+      ),
+    );
   }
 }

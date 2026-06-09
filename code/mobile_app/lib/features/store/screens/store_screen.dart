@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../../data/models/product.dart';
 import '../../../../../data/models/order.dart';
@@ -326,7 +328,6 @@ class _StoreScreenState extends State<StoreScreen> {
   }
 
   Widget _buildProductCard(Product product) {
-    final isOut = product.stock == 0;
     final hasComparePrice = product.compareAtPrice > product.price;
 
     return GestureDetector(
@@ -347,49 +348,45 @@ class _StoreScreenState extends State<StoreScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Product Graphic Preview
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.fieldBackground.withOpacity(0.4),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                ),
-                child: Stack(
-                  children: [
-                    Center(
-                      child: Icon(
-                        _getArtIcon(product.artStyle),
-                        size: 48,
-                        color: AppColors.olive.withOpacity(0.7),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.fieldBackground.withOpacity(0.4),
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: _buildProductImage(product, size: 48),
                       ),
-                    ),
-                    if (product.badge.isNotEmpty)
-                      Positioned(
-                        top: 10,
-                        left: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.olive,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            product.badge.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.8,
+                      if (product.badge.isNotEmpty)
+                        Positioned(
+                          top: 10,
+                          left: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.olive,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              product.badge.toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-
-            // Meta Info
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -483,6 +480,84 @@ class _StoreScreenState extends State<StoreScreen> {
       default:
         return Icons.lock;
     }
+  }
+
+  Widget _buildProductImage(Product product, {double size = 48}) {
+    final imageUrl = product.imageUrl.trim();
+    if (imageUrl.isEmpty) {
+      return _buildFallbackIcon(product, size);
+    }
+
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(product, size),
+      );
+    }
+
+    if (imageUrl.startsWith('data:image/svg+xml')) {
+      try {
+        String svgString;
+        if (imageUrl.contains(';base64,')) {
+          final base64Str = imageUrl.split(';base64,')[1];
+          svgString = utf8.decode(base64.decode(base64Str));
+        } else {
+          final parts = imageUrl.split(',');
+          if (parts.length > 1) {
+            svgString = Uri.decodeComponent(parts.sublist(1).join(','));
+          } else {
+            svgString = '';
+          }
+        }
+        if (svgString.isNotEmpty) {
+          return SvgPicture.string(
+            svgString,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          );
+        }
+      } catch (_) {}
+    }
+
+    if (imageUrl.startsWith('data:image/') && imageUrl.contains(';base64,')) {
+      try {
+        final base64Str = imageUrl.split(';base64,')[1];
+        final bytes = base64.decode(base64Str);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      } catch (_) {}
+    }
+
+    // Try decoding as raw base64
+    try {
+      final bytes = base64.decode(imageUrl);
+      return Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      );
+    } catch (_) {}
+
+    return _buildFallbackIcon(product, size);
+  }
+
+  Widget _buildFallbackIcon(Product product, double size) {
+    return Center(
+      child: Icon(
+        _getArtIcon(product.artStyle),
+        size: size,
+        color: AppColors.olive.withOpacity(0.7),
+      ),
+    );
   }
 
   Widget _buildOrderHistory() {

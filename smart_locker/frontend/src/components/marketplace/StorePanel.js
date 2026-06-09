@@ -848,6 +848,42 @@ function StorePanel({ user, token }) {
     setProductForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const uploadToCloudinary = async (file) => {
+    const cloudName = 'dsh0yj9rh';
+    const apiKey = '797913589128223';
+    const apiSecret = 'hVGEaqFO9-uvcdvxr1taSfyPlLY';
+
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const folder = 'marketplace';
+
+    const stringToSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+
+    const msgBuffer = new TextEncoder().encode(stringToSign);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-1', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const signature = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    formData.append('timestamp', timestamp);
+    formData.append('api_key', apiKey);
+    formData.append('signature', signature);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error?.message || 'Cloudinary upload failed');
+    }
+
+    const data = await response.json();
+    return data.secure_url;
+  };
+
   const handleProductImageUpload = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -863,11 +899,11 @@ function StorePanel({ user, token }) {
 
     try {
       setUploadingImage(true);
-      const imageUrl = await readImageAsDataUrl(file);
-      handleFormChange('imageUrl', imageUrl);
-      setNotice('Product photo selected. Save changes to apply it.');
+      const secureUrl = await uploadToCloudinary(file);
+      handleFormChange('imageUrl', secureUrl);
+      setNotice('Product photo uploaded to Cloudinary successfully. Save changes to apply it.');
     } catch (error) {
-      setNotice(error.message || 'Could not read the selected image file.');
+      setNotice(error.message || 'Could not upload the selected image file to Cloudinary.');
     } finally {
       setUploadingImage(false);
     }
