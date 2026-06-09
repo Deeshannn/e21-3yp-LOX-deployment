@@ -206,6 +206,24 @@ function App() {
     }
   };
 
+  const onUpdateProfile = async (formData) => {
+    setError('');
+    setMessage('');
+
+    try {
+      const data = await apiRequest('/auth/me', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(formData)
+      });
+
+      saveSession(token, data.user);
+      setMessage('Profile updated successfully');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const headers = authHeaders(token);
 
   const onCreateStation = async (e) => {
@@ -298,6 +316,7 @@ function App() {
   return (
     <DashboardPage
       user={user}
+      token={token}
       error={error}
       approvalNotice={approvalNotice}
       message={message}
@@ -330,6 +349,7 @@ function App() {
       onLock={onLock}
       onRelease={onRelease}
       onIgnoreSecurity={onIgnoreSecurity}
+      onUpdateProfile={onUpdateProfile}
       onClearError={clearError}
       onClearMessage={clearMessage}
       onClearApprovalNotice={clearApprovalNotice}

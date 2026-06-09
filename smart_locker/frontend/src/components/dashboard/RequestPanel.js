@@ -22,7 +22,7 @@ function RequestPanel({
           <article className="mini-card">
             <h3>Current Request</h3>
             <p>Status: {activeRequest.status}</p>
-            <p>Station: {activeRequest.stationId?.code || '-'}</p>
+            <p>Sub-admin station: {activeRequest.stationId?.code || '-'}</p>
             <p>Note: {activeRequest.note || '-'}</p>
             <div className="actions">
               <button className="danger" type="button" onClick={() => onCancel(activeRequest._id)}>
@@ -39,7 +39,7 @@ function RequestPanel({
             required
             disabled={Boolean(activeRequest)}
           >
-            <option value="">Select Station</option>
+            <option value="">Select Sub-admin Station</option>
             {stations.map((station) => (
               <option key={station._id} value={station._id}>
                 {station.name} ({station.code})
@@ -75,7 +75,7 @@ function RequestPanel({
             <article className="mini-card" key={item._id}>
               <h3>{item.userId?.name || 'User'}</h3>
               <p>Status: {item.status}</p>
-              <p>Station: {item.stationId?.code || '-'}</p>
+              <p>Sub-admin station: {item.stationId?.code || '-'}</p>
               <p>Note: {item.note || '-'}</p>
               <div className="actions">
                 <button onClick={() => onApprove(item._id)}>Approve</button>

@@ -58,7 +58,7 @@ function LockerPanel({
 
       <div className="grid-form station-picker-row">
         <select value={selectedStationId} onChange={(e) => onStationChange(e.target.value)}>
-          <option value="">Select Station</option>
+          <option value="">Select Sub-admin Station</option>
           {stations.map((station) => (
             <option key={station._id} value={station._id}>
               {station.name} ({station.code})

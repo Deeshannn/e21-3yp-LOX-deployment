@@ -6,8 +6,8 @@
 #include <Adafruit_SSD1306.h>
 
 // Wi-Fi credentials
-const char* ssid = "HUAWEI-E8372-3A0F";
-const char* password = "55529256";
+const char* ssid = "Dialog 4G 826";
+const char* password = "3864f6F1";
 
 // MQTT broker settings
 const char* mqttServer = "3e037e542d2944a3ae4266e4d6f6c874.s1.eu.hivemq.cloud";
@@ -24,6 +24,7 @@ const int relayPin = 23;   // L1 real lock
 const int ledPins[lockerCount] = {23, 18, 19, 25}; // L2–L4 LEDs (L1 uses relay, L4 moved to pin 25 for OLED)
 const int ledBuiltin = 2;
 const int doorSensorPin = 4;
+const int doorSensorPinL2 = 17;
 const int doorIndicatorPin = 16; // External LED for L1 door open/close status
 const int beeperPin = 27; // 3-pin buzzer module I/O
 const bool beeperActiveLow = true; // This buzzer module variant is LOW-trigger in most cases
@@ -34,9 +35,13 @@ const int vibrationSensorPin = 26;  // SW-420 Digital Output
 // OLED Display pins (I2C)
 const int SDA_PIN = 21;
 const int SCL_PIN = 22;
+const int SDA2_PIN = 32;
+const int SCL2_PIN = 33;
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+TwoWire WireL2 = TwoWire(1);
+Adafruit_SSD1306 displayL2(SCREEN_WIDTH, SCREEN_HEIGHT, &WireL2, -1);
 
 // MQTT topics
 char lockerControlTopics[lockerCount][64];
@@ -53,6 +58,7 @@ PubSubClient mqttClient(wifiClient);
 
 // Door state (only for L1)
 String lastDoorState = "UNKNOWN";
+String lastDoorStateL2 = "UNKNOWN";
 
 // Vibration sensor state tracking
 bool vibrationDetected = false;
@@ -64,7 +70,11 @@ String lockerStateDisplay = "LOCKED";
 String lockerActionDisplay = "";
 String doorStateDisplay = "CLOSED";
 String lockerBookingDisplay = "FREE";
+String locker2StateDisplay = "LOCKED";
+String doorStateDisplayL2 = "CLOSED";
+String locker2BookingDisplay = "FREE";
 bool locker1IsLocked = true;
+bool locker2IsLocked = true;
 bool securityAlarmActive = false;
 bool securityBeeperOn = false;
 bool securityIgnoreLatched = false;
@@ -74,6 +84,7 @@ unsigned long securityWarningAnimationLastStepAt = 0;
 int securityWarningWordX = 0;
 int securityWarningWordDirection = 1;
 bool displayNeedsUpdate = true;
+bool displayNeedsUpdateL2 = true;
 
 void setSecurityBeeper(bool on) {
   securityBeeperOn = on;
@@ -214,6 +225,26 @@ void updateDisplay() {
   display.display();
 }
 
+void updateDisplayL2() {
+  displayL2.clearDisplay();
+  displayL2.setTextColor(SSD1306_WHITE);
+  displayL2.setTextSize(1);
+  displayL2.setCursor(0, 0);
+
+  displayL2.setTextSize(2);
+  displayL2.println("LOCKER 2");
+
+  displayL2.setTextSize(1);
+  displayL2.print("State: ");
+  displayL2.println(locker2StateDisplay);
+  displayL2.print("Door: ");
+  displayL2.println(doorStateDisplayL2);
+  displayL2.print("Status: ");
+  displayL2.println(locker2BookingDisplay);
+
+  displayL2.display();
+}
+
 // ---------------- APPLY STATE ----------------
 void applyLockerState(int i, bool locked) {
 
@@ -243,6 +274,12 @@ void applyLockerState(int i, bool locked) {
 
   // 🔹 L2–L4 → LEDs
   else {
+    if (i == 1) {
+      locker2IsLocked = locked;
+      locker2StateDisplay = locked ? "LOCKED" : "UNLOCKED";
+      displayNeedsUpdateL2 = true;
+    }
+
     if (locked) {
       digitalWrite(ledPins[i], LOW);   // OFF
     } else {
@@ -255,6 +292,24 @@ void applyLockerState(int i, bool locked) {
     mqttClient.publish(lockerStateTopics[i], "LOCKED", true);
   } else {
     mqttClient.publish(lockerStateTopics[i], "UNLOCKED", true);
+  }
+}
+
+void publishDoorStateL2() {
+  String currentDoorState = digitalRead(doorSensorPinL2) == HIGH ? "OPEN" : "CLOSED";
+
+  if (currentDoorState != lastDoorStateL2) {
+    Serial.printf("Door sensor L2: %s -> publishing %s to %s\n", currentDoorState.c_str(), currentDoorState.c_str(), lockerDoorTopics[1]);
+    mqttClient.publish(lockerDoorTopics[1], currentDoorState.c_str(), true);
+    lastDoorStateL2 = currentDoorState;
+
+    doorStateDisplayL2 = currentDoorState;
+    displayNeedsUpdateL2 = true;
+
+    // Auto-lock L2 when user closes the door after using locker.
+    if (currentDoorState == "CLOSED" && !locker2IsLocked) {
+      applyLockerState(1, true);
+    }
   }
 }
 
@@ -323,6 +378,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     } else if (message == "FREE" || message == "FALSE" || message == "0" || message == "NO" || message == "AVAILABLE") {
       lockerBookingDisplay = "FREE";
       displayNeedsUpdate = true;
+    }
+  }
+
+  if (incomingTopic == lockerBookingTopics[1] || incomingTopic == legacyBookingTopics[1]) {
+    if (message == "BOOKED" || message == "TRUE" || message == "1" || message == "YES" || message == "OCCUPIED") {
+      locker2BookingDisplay = "BOOKED";
+      displayNeedsUpdateL2 = true;
+    } else if (message == "FREE" || message == "FALSE" || message == "0" || message == "NO" || message == "AVAILABLE") {
+      locker2BookingDisplay = "FREE";
+      displayNeedsUpdateL2 = true;
     }
   }
 
@@ -467,6 +532,7 @@ void setup() {
   pinMode(relayPin, OUTPUT);
   pinMode(ledBuiltin, OUTPUT);
   pinMode(doorSensorPin, INPUT_PULLUP);
+  pinMode(doorSensorPinL2, INPUT_PULLUP);
   pinMode(doorIndicatorPin, OUTPUT);
   pinMode(beeperPin, OUTPUT);
   pinMode(vibrationSensorPin, INPUT);  // SW-420 vibration sensor
@@ -493,6 +559,21 @@ void setup() {
     display.display();
   }
 
+  // Initialize L2 OLED Display on a second I2C bus
+  WireL2.begin(SDA2_PIN, SCL2_PIN);
+  if (!displayL2.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("L2 OLED initialization failed!");
+  } else {
+    Serial.println("L2 OLED initialized successfully");
+    displayL2.clearDisplay();
+    displayL2.setTextSize(1);
+    displayL2.setTextColor(SSD1306_WHITE);
+    displayL2.setCursor(0, 0);
+    displayL2.println("LOCKER 2");
+    displayL2.println("Initializing...");
+    displayL2.display();
+  }
+
   connectWifi();
 
   wifiClient.setInsecure();
@@ -513,6 +594,7 @@ void loop() {
 
   mqttClient.loop();
   publishDoorState();
+  publishDoorStateL2();
   updateSecurityAlarm();
   checkVibrationSensor();  // Monitor vibrations when locked
   
@@ -520,5 +602,10 @@ void loop() {
   if (displayNeedsUpdate) {
     updateDisplay();
     displayNeedsUpdate = false;
+  }
+
+  if (displayNeedsUpdateL2) {
+    updateDisplayL2();
+    displayNeedsUpdateL2 = false;
   }
 }
