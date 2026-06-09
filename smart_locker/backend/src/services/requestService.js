@@ -2,7 +2,7 @@ const AccessRequest = require('../models/AccessRequest');
 const QueueEntry = require('../models/QueueEntry');
 const Locker = require('../models/Locker');
 const { RequestStatuses } = require('../constants/enums');
-const { logEvent } = require('./mqttService');
+const { logEvent, publishLockerBookingStatus } = require('./mqttService');
 
 function canAccessStation(user, stationId) {
   if (user.role === 'SUPER_ADMIN') {
@@ -95,6 +95,7 @@ async function assignWaitingQueue(stationId) {
   freeLocker.currentUserId = request.userId;
   freeLocker.activeRequestId = request._id;
   await freeLocker.save();
+  await publishLockerBookingStatus(freeLocker);
 
   await logEvent(freeLocker, 'QUEUE_ASSIGNED', 'Queue front user assigned to locker', { requestId: request._id });
 }
@@ -143,6 +144,7 @@ async function approveRequest(user, requestId) {
   freeLocker.currentUserId = request.userId;
   freeLocker.activeRequestId = request._id;
   await freeLocker.save();
+  await publishLockerBookingStatus(freeLocker);
 
   await logEvent(freeLocker, 'REQUEST_APPROVED', 'User request approved and assigned', { requestId: request._id });
 

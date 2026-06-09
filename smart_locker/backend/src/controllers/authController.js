@@ -1,6 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const { success } = require('../presenters/apiPresenter');
-const { register, login, bootstrapSuperAdmin, toUserDTO } = require('../services/authService');
+const { register, login, bootstrapSuperAdmin, toUserDTO, updateProfile } = require('../services/authService');
 
 const registerHandler = asyncHandler(async (req, res) => {
   const { name, email, password, stationCode, role, inviteKey } = req.body;
@@ -26,6 +26,11 @@ const meHandler = asyncHandler(async (req, res) => {
   return success(res, { user: toUserDTO(req.user) });
 });
 
+const updateMeHandler = asyncHandler(async (req, res) => {
+  const result = await updateProfile(req.user._id, req.body);
+  return success(res, result);
+});
+
 const bootstrapHandler = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
@@ -40,5 +45,6 @@ module.exports = {
   registerHandler,
   loginHandler,
   meHandler,
+  updateMeHandler,
   bootstrapHandler
 };

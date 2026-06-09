@@ -14,7 +14,7 @@ async function listLockers(user, stationId) {
   const filter = {};
 
   if (stationId) {
-    if (!canAccessStation(user, stationId)) {
+    if (user.role !== 'USER' && !canAccessStation(user, stationId)) {
       const error = new Error('Station access denied');
       error.statusCode = 403;
       throw error;
@@ -46,11 +46,15 @@ async function createLocker(user, payload) {
     throw error;
   }
 
+  const code = payload.code.toUpperCase();
+
   const locker = await Locker.create({
     stationId: payload.stationId,
-    code: payload.code.toUpperCase(),
-    controlTopic: payload.controlTopic || `locker/${payload.code}/control`,
-    stateTopic: payload.stateTopic || `locker/${payload.code}/state`
+    code,
+    controlTopic: payload.controlTopic || `locker/${code}/control`,
+    stateTopic: payload.stateTopic || `locker/${code}/state`,
+    doorTopic: payload.doorTopic || `locker/${code}/door`,
+    securityTopic: payload.securityTopic || `locker/${code}/security`
   });
 
   await subscribeLockerState(locker);

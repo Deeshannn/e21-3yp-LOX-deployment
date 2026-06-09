@@ -6,7 +6,14 @@ const { notFound, errorHandler } = require('./middleware/errorHandler');
 function createApp() {
   const app = express();
   app.use(cors());
-  app.use(express.json());
+  app.use((req, res, next) => {
+    if (req.originalUrl === '/api/payments/webhook') {
+      return next();
+    }
+
+    return express.json({ limit: '10mb' })(req, res, next);
+  });
+  app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
   app.use('/api', apiRoutes);
 

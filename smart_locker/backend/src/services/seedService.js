@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const Station = require('../models/Station');
 const Locker = require('../models/Locker');
 const User = require('../models/User');
+const { seedProducts } = require('./productService');
 const { Roles } = require('../constants/enums');
 const { env } = require('../config/env');
 const { subscribeLockerState } = require('./mqttService');
@@ -43,8 +44,12 @@ async function upsertUser({ name, email, password, role, stationIds }) {
       stationId: station._id,
       code: 'L1',
       controlTopic: env.defaultControlTopic,
-      stateTopic: env.defaultStateTopic
+      stateTopic: env.defaultStateTopic,
+      doorTopic: env.defaultDoorTopic
     });
+  } else if (!locker.doorTopic) {
+    locker.doorTopic = env.defaultDoorTopic;
+    await locker.save();
   }
 
   await subscribeLockerState(locker);
@@ -76,6 +81,8 @@ async function upsertUser({ name, email, password, role, stationIds }) {
     role: Roles.USER,
     stationIds: [station._id]
   });
+
+  await seedProducts();
 
   console.log('Sample data seeded into database');
 }

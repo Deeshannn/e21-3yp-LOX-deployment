@@ -15,22 +15,33 @@ function AuthForm({
   onBootstrapSuperAdmin
 }) {
   return (
-    <div className="panel auth-panel">
-      <h1>Smart Locker Platform</h1>
-      <p>Database backed login and role-based control.</p>
+    <div className="panel auth-card">
+      <div className="auth-card-header">
+        <div>
+          <p className="auth-card-kicker">{mode === 'login' ? 'Sign in' : 'Sign up'}</p>
+          <h2>{mode === 'login' ? 'Access your dashboard' : 'Create a new account'}</h2>
+          <p className="auth-card-copy">
+            {mode === 'login'
+              ? 'Use your registered email and password to continue.'
+              : 'Add your details to create a role-based locker account.'}
+          </p>
+        </div>
+      </div>
 
-      <div className="auth-switch">
+      <div className="auth-switch" role="tablist" aria-label="Authentication mode">
         <button
+          type="button"
           className={mode === 'login' ? 'active' : ''}
           onClick={() => onModeChange('login')}
         >
-          Login
+          Sign in
         </button>
         <button
+          type="button"
           className={mode === 'register' ? 'active' : ''}
           onClick={() => onModeChange('register')}
         >
-          Register
+          Sign up
         </button>
       </div>
 
@@ -46,7 +57,7 @@ function AuthForm({
 
         <input
           type="email"
-          placeholder="Email"
+          placeholder="Email address"
           value={form.email}
           onChange={(e) => onChange('email', e.target.value)}
           required
@@ -73,7 +84,7 @@ function AuthForm({
 
         {mode === 'register' && (
           <input
-            placeholder="Station Code (optional, e.g. ST001)"
+            placeholder="Station code (optional, e.g. ST001)"
             value={form.stationCode}
             onChange={(e) => onChange('stationCode', e.target.value)}
           />
@@ -81,13 +92,13 @@ function AuthForm({
 
         {mode === 'register' && form.role !== ROLE.USER && (
           <input
-            placeholder="Admin Invite Key"
+            placeholder="Admin invite key"
             value={form.inviteKey}
             onChange={(e) => onChange('inviteKey', e.target.value)}
           />
         )}
 
-        <button type="submit">{mode === 'login' ? 'Login' : 'Register'}</button>
+        <button type="submit">{mode === 'login' ? 'Sign in' : 'Create account'}</button>
       </form>
 
       <button className="secondary" onClick={onBootstrapSuperAdmin}>

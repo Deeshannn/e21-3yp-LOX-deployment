@@ -11,8 +11,17 @@ function toUserDTO(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    avatarUrl: user.avatarUrl || '',
+    homeBackgroundUrl: user.homeBackgroundUrl || '',
+    phone: user.phone || '',
+    jobTitle: user.jobTitle || '',
+    bio: user.bio || '',
     stationIds: user.stationIds || []
   };
+}
+
+function normalizeText(value) {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function signToken(user) {
@@ -54,6 +63,11 @@ async function register({ name, email, password, stationCode, role = Roles.USER,
     email: normalizedEmail,
     passwordHash,
     role,
+    avatarUrl: '',
+    homeBackgroundUrl: '',
+    phone: '',
+    jobTitle: '',
+    bio: '',
     stationIds
   });
 
@@ -106,6 +120,11 @@ async function bootstrapSuperAdmin({ name, email, password }) {
     email: normalizedEmail,
     passwordHash,
     role: Roles.SUPER_ADMIN,
+    avatarUrl: '',
+    homeBackgroundUrl: '',
+    phone: '',
+    jobTitle: '',
+    bio: '',
     stationIds: []
   });
 
@@ -115,9 +134,55 @@ async function bootstrapSuperAdmin({ name, email, password }) {
   };
 }
 
+async function updateProfile(userId, updates) {
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const nextName = normalizeText(updates.name);
+  const nextEmail = normalizeText(updates.email).toLowerCase();
+
+  if (!nextName) {
+    const error = new Error('name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!nextEmail) {
+    const error = new Error('email is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (nextEmail !== user.email) {
+    const existing = await User.findOne({ email: nextEmail, _id: { $ne: user._id } });
+    if (existing) {
+      const error = new Error('Email already exists');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  user.name = nextName;
+  user.email = nextEmail;
+  user.avatarUrl = normalizeText(updates.avatarUrl);
+  user.homeBackgroundUrl = normalizeText(updates.homeBackgroundUrl);
+  user.phone = normalizeText(updates.phone);
+  user.jobTitle = normalizeText(updates.jobTitle);
+  user.bio = normalizeText(updates.bio);
+
+  await user.save();
+
+  return { user: toUserDTO(user) };
+}
+
 module.exports = {
   register,
   login,
   bootstrapSuperAdmin,
-  toUserDTO
+  toUserDTO,
+  updateProfile
 };

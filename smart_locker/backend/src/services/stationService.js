@@ -1,7 +1,7 @@
 const Station = require('../models/Station');
 
 function getStationsForUser(user) {
-  if (user.role === 'SUPER_ADMIN') {
+  if (user.role === 'SUPER_ADMIN' || user.role === 'USER') {
     return Station.find({}).sort({ createdAt: 1 });
   }
 

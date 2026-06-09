@@ -4,7 +4,8 @@ const {
   createLockerHandler,
   unlockLockerHandler,
   lockLockerHandler,
-  releaseLockerHandler
+  releaseLockerHandler,
+  ignoreSecurityAlertHandler
 } = require('../controllers/lockerController');
 const { requireAuth, allowRoles } = require('../middleware/authMiddleware');
 const { Roles } = require('../constants/enums');
@@ -17,5 +18,6 @@ router.post('/', allowRoles([Roles.SUPER_ADMIN, Roles.SUB_ADMIN]), createLockerH
 router.post('/:lockerId/unlock', unlockLockerHandler);
 router.post('/:lockerId/lock', lockLockerHandler);
 router.post('/:lockerId/release', releaseLockerHandler);
+router.post('/:lockerId/security-ignore', ignoreSecurityAlertHandler);
 
 module.exports = router;

@@ -1,16 +1,30 @@
 import React from 'react';
 import HeaderBar from '../components/dashboard/HeaderBar';
 import AlertMessage from '../components/common/AlertMessage';
-import AdminSetupPanel from '../components/dashboard/AdminSetupPanel';
-import StationPanel from '../components/dashboard/StationPanel';
 import RequestPanel from '../components/dashboard/RequestPanel';
 import LockerPanel from '../components/dashboard/LockerPanel';
 import QueuePanel from '../components/dashboard/QueuePanel';
-import EventPanel from '../components/dashboard/EventPanel';
+import AccountPanel from '../components/dashboard/AccountPanel';
+import HelpPanel from '../components/dashboard/HelpPanel';
+import AnalyticsPanel from '../components/dashboard/AnalyticsPanel';
+import StorePanel from '../components/marketplace/StorePanel';
+
+function createProfileForm(user) {
+  return {
+    name: user?.name || '',
+    email: user?.email || '',
+    avatarUrl: user?.avatarUrl || '',
+    homeBackgroundUrl: user?.homeBackgroundUrl || '',
+    phone: user?.phone || '',
+    jobTitle: user?.jobTitle || '',
+    bio: user?.bio || ''
+  };
+}
 
 function DashboardPage(props) {
   const {
     user,
+    token,
     error,
     approvalNotice,
     message,
@@ -21,19 +35,10 @@ function DashboardPage(props) {
     requests,
     queueEntries,
     events,
-    stationForm,
-    lockerForm,
     requestForm,
     onRefresh,
     onLogout,
-    onStationFormChange,
-    onCreateStation,
-    onLockerFormChange,
-    onCreateLocker,
     onStationFilterChange,
-    onEmergencyUnlock,
-    onLockAll,
-    onChangeSchedule,
     onRequestFormChange,
     onCreateRequest,
     onApproveRequest,
@@ -41,61 +46,118 @@ function DashboardPage(props) {
     onCancelRequest,
     onUnlock,
     onLock,
-    onRelease
+    onRelease,
+    onIgnoreSecurity,
+    onUpdateProfile,
+    onClearError,
+    onClearMessage,
+    onClearApprovalNotice,
+    onClearRejectionNotice
   } = props;
 
+  const [activeSection, setActiveSection] = React.useState('home');
+  const [localProfileForm, setLocalProfileForm] = React.useState(() => createProfileForm(user));
+
+  const stationName = React.useMemo(() => {
+    const selectedStation = stations.find((station) => station._id === selectedStationId);
+    if (selectedStation?.name) {
+      return selectedStation.name;
+    }
+
+    const assignedStationId = user?.stationIds?.[0];
+    const assignedStation = stations.find((station) => station._id === assignedStationId || station._id === String(assignedStationId));
+    return assignedStation?.name || selectedStation?.name || 'Locker Station';
+  }, [selectedStationId, stations, user]);
+
+  React.useEffect(() => {
+    setLocalProfileForm(createProfileForm(user));
+  }, [user]);
+
+  const handleProfileSubmit = async (event) => {
+    event.preventDefault();
+    await onUpdateProfile(localProfileForm);
+  };
+
+  const handleProfileChange = (key, value) => {
+    setLocalProfileForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const activeNotification = error
+    ? { type: 'error', text: error, onClose: onClearError }
+    : rejectionNotice
+      ? { type: 'error', text: rejectionNotice, onClose: onClearRejectionNotice }
+      : approvalNotice
+        ? { type: 'success', text: approvalNotice, onClose: onClearApprovalNotice }
+        : message
+          ? { type: 'success', text: message, onClose: onClearMessage }
+          : null;
+
+  const homeBackgroundUrl = localProfileForm.homeBackgroundUrl || user.homeBackgroundUrl || '';
+  const homeSectionStyle = homeBackgroundUrl
+    ? {
+        '--home-background-image': `url("${homeBackgroundUrl}")`
+      }
+    : {
+        '--home-background-image': 'none'
+      };
+
   return (
-    <div className="page">
-      <HeaderBar user={user} onRefresh={onRefresh} onLogout={onLogout} />
-      <AlertMessage type="error" text={error} />
-      <AlertMessage type="success" text={approvalNotice} />
-      <AlertMessage type="error" text={rejectionNotice} />
-      <AlertMessage type="success" text={message} />
-
-      <AdminSetupPanel
+    <div className="page dashboard-page">
+      <HeaderBar
         user={user}
-        stations={stations}
-        stationForm={stationForm}
-        onStationFormChange={onStationFormChange}
-        onCreateStation={onCreateStation}
-        lockerForm={lockerForm}
-        onLockerFormChange={onLockerFormChange}
-        onCreateLocker={onCreateLocker}
+        stationName={stationName}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        onRefresh={onRefresh}
+        onLogout={onLogout}
       />
 
-      <StationPanel
-        user={user}
-        stations={stations}
-        onEmergencyUnlock={onEmergencyUnlock}
-        onLockAll={onLockAll}
-        onChangeSchedule={onChangeSchedule}
-      />
+      {activeNotification ? <AlertMessage {...activeNotification} /> : null}
 
-      <RequestPanel
-        user={user}
-        stations={stations}
-        requests={requests}
-        requestForm={requestForm}
-        onRequestFormChange={onRequestFormChange}
-        onCreateRequest={onCreateRequest}
-        onApprove={onApproveRequest}
-        onReject={onRejectRequest}
-        onCancel={onCancelRequest}
-      />
+      {activeSection === 'home' ? (
+        <main className="dashboard-stack dashboard-home-shell" style={homeSectionStyle}>
+          <RequestPanel
+            user={user}
+            stations={stations}
+            requests={requests}
+            requestForm={requestForm}
+            onRequestFormChange={onRequestFormChange}
+            onCreateRequest={onCreateRequest}
+            onApprove={onApproveRequest}
+            onReject={onRejectRequest}
+            onCancel={onCancelRequest}
+          />
 
-      <LockerPanel
-        user={user}
-        stations={stations}
-        selectedStationId={selectedStationId}
-        onStationChange={onStationFilterChange}
-        lockers={lockers}
-        onUnlock={onUnlock}
-        onLock={onLock}
-        onRelease={onRelease}
-      />
+          <LockerPanel
+            user={user}
+            stations={stations}
+            selectedStationId={selectedStationId}
+            onStationChange={onStationFilterChange}
+            lockers={lockers}
+            onUnlock={onUnlock}
+            onLock={onLock}
+            onRelease={onRelease}
+            onIgnoreSecurity={onIgnoreSecurity}
+          />
 
-      <QueuePanel queueEntries={queueEntries} />
-      <EventPanel events={events} />
+          <QueuePanel queueEntries={queueEntries} />
+        </main>
+      ) : null}
+
+      {activeSection === 'store' ? <StorePanel user={user} token={token} /> : null}
+
+      {activeSection === 'account' ? (
+        <AccountPanel
+          user={user}
+          profileForm={localProfileForm}
+          onProfileFormChange={handleProfileChange}
+          onSubmit={handleProfileSubmit}
+        />
+      ) : null}
+
+      {activeSection === 'help' ? <HelpPanel /> : null}
+
+      {activeSection === 'analytics' ? <AnalyticsPanel requests={requests} events={events} queueEntries={queueEntries} /> : null}
     </div>
   );
 }
