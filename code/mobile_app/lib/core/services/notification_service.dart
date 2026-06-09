@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../data/remote/api_client.dart';
 
 class FirebaseNotificationService {
   FirebaseNotificationService._privateConstructor();
   static final FirebaseNotificationService instance = FirebaseNotificationService._privateConstructor();
+
+  static const MethodChannel _platformChannel = MethodChannel('com.example.mobile_app/notifications');
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -55,12 +58,9 @@ class FirebaseNotificationService {
       });
 
       // 4. Foreground message listener
-      // Do not convert background/system notifications into in-app popups.
-      // FCM will show normal system notifications when the app is in background or terminated.
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('Received foreground notification: ${message.notification?.title}');
-        // Keep this handler only for logging or app-specific processing.
-        // If you want a system notification while the app is in foreground, use a local notifications plugin.
+        _showForegroundSystemNotification(message);
       });
 
       // 5. Background / Terminated notification click handler
@@ -97,6 +97,20 @@ class FirebaseNotificationService {
       }
     } catch (e) {
       debugPrint('[Notification] Error registering FCM token to backend: $e');
+    }
+  }
+
+  /// Trigger a system tray notification when the app is in the foreground
+  Future<void> _showForegroundSystemNotification(RemoteMessage message) async {
+    final title = message.notification?.title ?? 'Notification';
+    final body = message.notification?.body ?? '';
+    try {
+      await _platformChannel.invokeMethod('showNotification', {
+        'title': title,
+        'body': body,
+      });
+    } catch (e) {
+      debugPrint('[Notification] Error showing foreground system notification: $e');
     }
   }
 }
