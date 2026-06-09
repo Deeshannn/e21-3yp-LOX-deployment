@@ -5,17 +5,18 @@ import '../../../data/models/access_request.dart';
 import '../../../data/models/locker.dart';
 import '../../../data/models/session_data.dart';
 import '../../../data/models/station.dart';
+import '../../../data/models/user_profile.dart';
 import '../tabs/account/screens/account_screen.dart';
 import '../tabs/my_lockers/screens/requests_screen.dart';
 import '../tabs/explore/screens/station_detail_screen.dart';
 import '../tabs/explore/screens/explore_screen.dart';
+import '../../store/screens/store_screen.dart';
 
 /// The primary shell screen for authenticated users.
 ///
 /// Coordinates top-level data fetching (stations, lockers, requests) and
 /// manages bottom navigation state using an [IndexedStack] to preserve
 /// the UI state of individual tabs.
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.session, required this.onLogout});
 
@@ -41,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedStationId = '';
 
   // Core Data State
+  late UserProfile _user;
   List<Station> _stations = const [];
   List<AccessRequest> _requests = const [];
 
@@ -50,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _user = widget.session.user;
     _loadUiPrefsAndData();
   }
 
@@ -66,9 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Fetches all required backend data to populate the home screen.
-  /// 
-  /// This fetches stations and requests sequentially, but optimizes 
-  /// locker fetching by resolving them concurrently via [Future.wait].
   Future<void> _loadData() async {
     setState(() {
       _loading = true;
@@ -89,8 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
             );
             return MapEntry(station.id, lockers);
           } catch (_) {
-            // If fetching lockers for a specific station fails, return an empty list 
-            // rather than failing the entire data load process.
             return MapEntry(station.id, <Locker>[]);
           }
         }),
@@ -157,9 +155,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Navigates to the [StationDetailScreen] for the selected station.
-  /// 
-  /// Waits for the screen to pop, and if it returns `true` 
-  /// (indicating a state change like a new booking), refreshes the home screen data.
   Future<void> _openStation(Station station) async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -199,47 +194,89 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    // Dynamic background image logic matching the Web Frontend style
+    final hasBackground = _user.homeBackgroundUrl.isNotEmpty;
+    final mainDecoration = hasBackground
+        ? BoxDecoration(
+            image: DecorationImage(
+              image: NetworkImage(_user.homeBackgroundUrl),
+              fit: BoxFit.cover,
+              colorFilter: ColorFilter.mode(
+                Colors.white.withOpacity(0.93),
+                BlendMode.lighten,
+              ),
+            ),
+          )
+        : const BoxDecoration(
+            color: Color(0xFFF2F1EF),
+          );
+
     return Scaffold(
-      appBar: AppBar(title: const Text('')),
-      body: IndexedStack(
-        index: _tabIndex,
-        // Using an IndexedStack allows us to preserve the state of each tab's screen when switching between them.
-        children: [
-          StationsView(
-            stations: _stations,
-            lockersByStation: _lockersByStation,
-            locationDraft: _locationDraft,
-            savedLocation: _savedLocation,
-            savingLocation: _savingLocation,
-            onLocationChanged: (val) => setState(() => _locationDraft = val),
-            onSaveLocation: _saveLocation,
-            activeRequestForStation: _activeRequestForStation,
-            freeCountForStation: _freeCountForStation,
-            onOpenStation: _openStation,
-            onRefresh: _loadData,
-          ),
-          RequestsScreen(
-            requests: _requests,
-            stations: _stations,
-            onRefresh: _loadData,
-          ),
-          AccountScreen(user: widget.session.user, onLogout: widget.onLogout),
-        ],
+      body: Container(
+        decoration: mainDecoration,
+        child: IndexedStack(
+          index: _tabIndex,
+          children: [
+            StationsView(
+              stations: _stations,
+              lockersByStation: _lockersByStation,
+              locationDraft: _locationDraft,
+              savedLocation: _savedLocation,
+              savingLocation: _savingLocation,
+              onLocationChanged: (val) => setState(() => _locationDraft = val),
+              onSaveLocation: _saveLocation,
+              activeRequestForStation: _activeRequestForStation,
+              freeCountForStation: _freeCountForStation,
+              onOpenStation: _openStation,
+              onRefresh: _loadData,
+            ),
+            RequestsScreen(
+              requests: _requests,
+              stations: _stations,
+              client: widget.session.client,
+              user: _user,
+              lockersByStation: _lockersByStation,
+              onRefresh: _loadData,
+            ),
+            StoreScreen(
+              client: widget.session.client,
+              user: _user,
+            ),
+            AccountScreen(
+              user: _user,
+              client: widget.session.client,
+              onProfileUpdated: (updatedUser) {
+                setState(() {
+                  _user = updatedUser;
+                });
+              },
+              onLogout: widget.onLogout,
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tabIndex,
         onDestinationSelected: (i) => setState(() => _tabIndex = i),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore),
             label: 'Explore',
           ),
           NavigationDestination(
             icon: Icon(Icons.bookmark_outline),
+            selectedIcon: Icon(Icons.bookmark),
             label: 'Bookings',
           ),
           NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront),
+            label: 'Store',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
             label: 'Profile',
           ),
         ],

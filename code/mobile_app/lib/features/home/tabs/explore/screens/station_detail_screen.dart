@@ -4,14 +4,10 @@ import '../../../../../data/models/access_request.dart';
 import '../../../../../data/models/locker.dart';
 import '../../../../../data/models/station.dart';
 import '../../../../../data/remote/api_client.dart';
+import '../../../../../core/theme/app_colors.dart';
 import '../widgets/locker_chip.dart';
 import '../widgets/stat_card.dart';
 
-/// A detailed view for a specific [Station], displaying its overall status,
-/// available/reserved locker counts, and a grid of individual lockers.
-///
-/// Allows users to pull-to-refresh real-time locker statuses and submit
-/// a new locker access request if they do not already have an active one.
 class StationDetailScreen extends StatefulWidget {
   const StationDetailScreen({
     super.key,
@@ -21,17 +17,9 @@ class StationDetailScreen extends StatefulWidget {
     required this.activeRequest,
   });
 
-  /// The authenticated API client used to perform actions specific to this station.
   final ApiClient client;
-
-  /// The station being viewed.
   final Station station;
-
-  /// The list of lockers passed down from the parent screen. Used for immediate
-  /// display before any fresh network calls are made.
   final List<Locker> initialLockers;
-
-  /// The user's current pending or queued request for this specific station, if any.
   final AccessRequest? activeRequest;
 
   @override
@@ -39,32 +27,23 @@ class StationDetailScreen extends StatefulWidget {
 }
 
 class _StationDetailScreenState extends State<StationDetailScreen> {
-  static const _bg = Color(0xFFF6F5F1);
-  static const _muted = Color(0xFFA6A39B);
-  static const _text = Color(0xFF1F1E1B);
-  static const _olive = Color(0xFF5B5A3D);
-  static const _track = Color(0xFFE7E4DD);
-
-  /// The current, live list of lockers. Initialized from the widget's properties
-  /// but can be updated via pull-to-refresh.
   late List<Locker> _lockers;
-
-  /// The active request associated with this user and station. Kept in local state
-  /// so the UI can instantly update once a new request is successfully submitted.
   AccessRequest? _activeRequest;
-
   bool _loading = false;
   bool _submittingRequest = false;
 
   @override
   void initState() {
     super.initState();
-    // Copy the initial data provided by the parent into local state so we can mutate/update it independently while on this screen.
     _lockers = List<Locker>.from(widget.initialLockers);
     _activeRequest = widget.activeRequest;
   }
 
-  /// Fetches the absolute latest locker data from the backend for this station.
+  void _show(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   Future<void> _refreshLockers() async {
     setState(() => _loading = true);
     try {
@@ -72,20 +51,12 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
       if (!mounted) return;
       setState(() => _lockers = lockers);
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
+      _show(error.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  /// Opens a dialog to capture an optional note, then submits a locker access request to the backend.
-  ///
-  /// Pops the screen and returns `true` to the caller if the request was successful,
-  /// signaling the parent screen to refresh its master data.
   Future<void> _requestLocker() async {
     final noteController = TextEditingController();
     final note = await showDialog<String>(
@@ -112,7 +83,6 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
       ),
     );
 
-    // If the user tapped 'Cancel' or dismissed the dialog, abort the process.
     if (note == null) return;
 
     setState(() => _submittingRequest = true);
@@ -123,18 +93,10 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
       );
       if (!mounted) return;
       setState(() => _activeRequest = request);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Locker request submitted to local admins.'),
-        ),
-      );
+      _show('Locker request submitted to local admins.');
       Navigator.of(context).pop(true);
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
+      _show(error.toString());
     } finally {
       if (mounted) setState(() => _submittingRequest = false);
     }
@@ -142,17 +104,16 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate live metrics for the UI
     final freeCount = _lockers.where((l) => !l.isBooked).length;
     final reservedCount = _lockers.length - freeCount;
     final canRequest = _activeRequest == null;
 
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: _bg,
+        backgroundColor: AppColors.background,
         elevation: 0,
-        iconTheme: const IconThemeData(color: _text),
+        iconTheme: IconThemeData(color: AppColors.textMain),
       ),
       body: RefreshIndicator(
         onRefresh: _refreshLockers,
@@ -165,7 +126,7 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                 borderRadius: BorderRadius.circular(26),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 18,
                     offset: const Offset(0, 10),
                   ),
@@ -175,7 +136,6 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Station icon + name row
                   Row(
                     children: [
                       Container(
@@ -185,9 +145,9 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                           color: const Color(0xFFF1F0EC),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.lock_outline_rounded,
-                          color: _olive,
+                          color: AppColors.olive,
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -197,17 +157,18 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                           children: [
                             Text(
                               widget.station.name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
-                                color: _text,
+                                color: AppColors.textMain,
                               ),
                             ),
                             Text(
-                              widget.station.code,
-                              style: const TextStyle(
-                                color: _muted,
+                              'Code: ${widget.station.code} • Hours: ${widget.station.openTime} - ${widget.station.closeTime}',
+                              style: TextStyle(
+                                color: AppColors.textLabel,
                                 fontWeight: FontWeight.w800,
+                                fontSize: 13,
                               ),
                             ),
                           ],
@@ -217,17 +178,15 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                   ),
                   const SizedBox(height: 18),
 
-                  // Availability fraction text
                   Text(
                     '$freeCount / ${_lockers.length} available',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      color: _olive,
+                      color: AppColors.olive,
                     ),
                   ),
                   const SizedBox(height: 8),
 
-                  // Progress bar (same as StationCard)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: LinearProgressIndicator(
@@ -235,13 +194,12 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                           ? 0.0
                           : (freeCount / _lockers.length).clamp(0.0, 1.0),
                       minHeight: 8,
-                      backgroundColor: _track,
-                      valueColor: const AlwaysStoppedAnimation(_olive),
+                      backgroundColor: AppColors.fieldBackground,
+                      valueColor: const AlwaysStoppedAnimation(AppColors.olive),
                     ),
                   ),
                   const SizedBox(height: 16),
 
-                  // Stat cards row  (keep your existing StatCard widgets)
                   Row(
                     children: [
                       Expanded(
@@ -264,7 +222,6 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                     ],
                   ),
 
-                  // Active request status
                   if (_activeRequest != null) ...[
                     const SizedBox(height: 12),
                     Container(
@@ -278,9 +235,9 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                       ),
                       child: Text(
                         'Request status: ${_activeRequest!.status}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: _text,
+                          color: AppColors.textMain,
                         ),
                       ),
                     ),
@@ -288,12 +245,11 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // CTA Button
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: _olive,
+                        backgroundColor: AppColors.olive,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -328,14 +284,19 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
             ),
 
             const SizedBox(height: 14),
-            const Text(
-              'LOCKERS',
-              style: TextStyle(
-                color: _muted,
-                fontSize: 12,
-                letterSpacing: 2.2,
-                fontWeight: FontWeight.w800,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'LOCKERS',
+                  style: TextStyle(
+                    color: AppColors.textLabel,
+                    fontSize: 12,
+                    letterSpacing: 2.2,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             if (_loading)
@@ -361,9 +322,9 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
                   mainAxisSpacing: 12,
                   childAspectRatio: 1.1,
                 ),
-                itemBuilder: (context, index) =>
-                    // LockerChip widget creates to represent each locker in the grid.
-                    LockerChip(locker: _lockers[index]),
+                itemBuilder: (context, index) {
+                  return LockerChip(locker: _lockers[index]);
+                },
               ),
           ],
         ),

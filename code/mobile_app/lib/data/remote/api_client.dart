@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../../core/errors/api_error.dart';
 import '../models/access_request.dart';
@@ -9,12 +10,13 @@ import '../models/auth_result.dart';
 import '../models/locker.dart';
 import '../models/station.dart';
 import '../models/user_profile.dart';
-
+import '../models/product.dart';
+import '../models/order.dart';
+import '../models/locker_event.dart';
+import '../models/queue_entry.dart';
 
 /// A simple API client to interact with the backend server.
 /// This class abstracts away the details of making HTTP requests, handling authentication, and parsing responses.
-/// It provides methods for logging in, registering, fetching user data, and interacting with stations and lockers.
-
 class ApiClient {
   // Inputs: baseUrl (API base URL) and token (JWT auth token).
   // Both are required to create an instance of ApiClient.
@@ -24,7 +26,6 @@ class ApiClient {
   final String token;
 
   // Internal helper to make HTTP requests with consistent error handling and auth.
-  // Inputs: method (GET/POST), path (endpoint), optional body for POST, and whether to include auth header.
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
@@ -50,6 +51,16 @@ class ApiClient {
             headers: headers,
             body: jsonEncode(body ?? const {}),
           );
+          break;
+        case 'PATCH':
+          response = await http.patch(
+            uri,
+            headers: headers,
+            body: jsonEncode(body ?? const {}),
+          );
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: headers);
           break;
         default:
           throw StateError('Unsupported method: $method');
@@ -133,6 +144,82 @@ class ApiClient {
     );
   }
 
+  /// Update the logged-in user profile details
+  Future<UserProfile> updateProfile(Map<String, dynamic> data) async {
+    final payload = await _request('PATCH', '/auth/me', body: data);
+    return UserProfile.fromJson(
+      payload['user'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  /// Update the logged-in user profile details with multipart files (avatar/background)
+  Future<UserProfile> updateProfileMultipart({
+    required String name,
+    required String email,
+    required String phone,
+    required String jobTitle,
+    required String bio,
+    File? avatarFile,
+    File? backgroundFile,
+  }) async {
+    const path = '/users/profile';
+    final uri = Uri.parse('$baseUrl$path');
+    final request = http.MultipartRequest('PUT', uri);
+
+    if (token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+
+    request.fields['name'] = name;
+    request.fields['email'] = email;
+    request.fields['phone'] = phone;
+    request.fields['jobTitle'] = jobTitle;
+    request.fields['bio'] = bio;
+
+    if (avatarFile != null) {
+      final ext = avatarFile.path.split('.').last.toLowerCase();
+      final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+      request.files.add(await http.MultipartFile.fromPath(
+        'avatar',
+        avatarFile.path,
+        contentType: MediaType.parse(mimeType),
+      ));
+    }
+
+    if (backgroundFile != null) {
+      final ext = backgroundFile.path.split('.').last.toLowerCase();
+      final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+      request.files.add(await http.MultipartFile.fromPath(
+        'background',
+        backgroundFile.path,
+        contentType: MediaType.parse(mimeType),
+      ));
+    }
+
+    late final http.StreamedResponse response;
+    try {
+      response = await request.send();
+    } on SocketException {
+      throw ApiError(
+        'Cannot reach backend at $baseUrl. Check API base URL and network access.',
+      );
+    }
+
+    final responseBody = await response.stream.bytesToString();
+    final payload = jsonDecode(responseBody) as Map<String, dynamic>? ?? const {};
+
+    if (response.statusCode >= 400) {
+      throw ApiError(
+        payload['message']?.toString() ?? 'Request failed (${response.statusCode})',
+      );
+    }
+
+    return UserProfile.fromJson(
+      payload['user'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+
   Future<List<Station>> fetchStations() async {
     final payload = await _request('GET', '/stations/all');
     final data = payload['stations'] as List<dynamic>? ?? const [];
@@ -169,5 +256,173 @@ class ApiClient {
     return AccessRequest.fromJson(
       payload['request'] as Map<String, dynamic>? ?? const {},
     );
+  }
+
+  // Locker Telemetry Commands
+  Future<void> unlockLocker(String lockerId) async {
+    await _request('POST', '/lockers/$lockerId/unlock');
+  }
+
+  Future<void> lockLocker(String lockerId) async {
+    await _request('POST', '/lockers/$lockerId/lock');
+  }
+
+  Future<void> releaseLocker(String lockerId) async {
+    await _request('POST', '/lockers/$lockerId/release');
+  }
+
+  Future<void> ignoreSecurityAlert(String lockerId) async {
+    await _request('POST', '/lockers/$lockerId/security-ignore');
+  }
+
+  // Admin Request Handlers
+  Future<void> approveRequest(String requestId) async {
+    await _request('POST', '/requests/$requestId/approve');
+  }
+
+  Future<void> rejectRequest(String requestId) async {
+    await _request('POST', '/requests/$requestId/reject');
+  }
+
+  Future<void> cancelRequest(String requestId) async {
+    await _request('POST', '/requests/$requestId/cancel');
+  }
+
+  // Admin Station Management
+  Future<void> emergencyUnlockStation(String stationId) async {
+    await _request('POST', '/stations/$stationId/emergency-unlock');
+  }
+
+  Future<void> lockAllLockersAtStation(String stationId) async {
+    await _request('POST', '/stations/$stationId/lock-all');
+  }
+
+  Future<void> updateStationSchedule(
+    String stationId,
+    String openTime,
+    String closeTime,
+  ) async {
+    await _request(
+      'PATCH',
+      '/stations/$stationId/schedule',
+      body: {'openTime': openTime, 'closeTime': closeTime},
+    );
+  }
+
+  Future<Station> createStation(
+    String name,
+    String code,
+    String openTime,
+    String closeTime,
+  ) async {
+    final payload = await _request(
+      'POST',
+      '/stations',
+      body: {
+        'name': name,
+        'code': code,
+        'openTime': openTime,
+        'closeTime': closeTime,
+      },
+    );
+    return Station.fromJson(
+      payload['station'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  Future<Locker> createLocker(
+    String stationId,
+    String code,
+    String controlTopic,
+    String stateTopic,
+  ) async {
+    final payload = await _request(
+      'POST',
+      '/lockers',
+      body: {
+        'stationId': stationId,
+        'code': code,
+        'controlTopic': controlTopic,
+        'stateTopic': stateTopic,
+      },
+    );
+    return Locker.fromJson(
+      payload['locker'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  // Event Logs and Queue
+  Future<List<LockerEvent>> fetchEvents() async {
+    final payload = await _request('GET', '/events?limit=50');
+    final data = payload['events'] as List<dynamic>? ?? const [];
+    return data
+        .map((item) => LockerEvent.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<QueueEntry>> fetchQueue(String stationId) async {
+    final payload = await _request('GET', '/queue?stationId=$stationId');
+    final data = payload['queueEntries'] as List<dynamic>? ?? const [];
+    return data
+        .map((item) => QueueEntry.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  // Marketplace Store Endpoints
+  Future<List<Product>> fetchProducts() async {
+    final payload = await _request('GET', '/products');
+    final data = payload['products'] as List<dynamic>? ?? const [];
+    return data
+        .map((item) => Product.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<Order>> fetchOrders() async {
+    final payload = await _request('GET', '/orders');
+    final data = payload['orders'] as List<dynamic>? ?? const [];
+    return data
+        .map((item) => Order.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createCheckoutSession(
+    String productId,
+    int quantity,
+    String color,
+  ) async {
+    return await _request(
+      'POST',
+      '/payments/checkout-session',
+      body: {
+        'productId': productId,
+        'quantity': quantity,
+        'selectedColor': color,
+      },
+    );
+  }
+
+  Future<Product> createProduct(Map<String, dynamic> data) async {
+    final payload = await _request('POST', '/products', body: data);
+    return Product.fromJson(
+      payload['product'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  Future<Product> updateProduct(
+    String productId,
+    Map<String, dynamic> data,
+  ) async {
+    final payload = await _request('PATCH', '/products/$productId', body: data);
+    return Product.fromJson(
+      payload['product'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  Future<void> deleteProduct(String productId) async {
+    await _request('DELETE', '/products/$productId');
+  }
+
+  Future<void> updateOrderStatus(String orderId, String status) async {
+    await _request('PATCH', '/orders/$orderId/status', body: {'status': status});
   }
 }

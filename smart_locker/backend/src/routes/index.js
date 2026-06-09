@@ -1,5 +1,6 @@
 const express = require('express');
 const authRoutes = require('./authRoutes');
+const userRoutes = require('./userRoutes');
 const stationRoutes = require('./stationRoutes');
 const lockerRoutes = require('./lockerRoutes');
 const productRoutes = require('./productRoutes');
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.get('/health', healthHandler);
 router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
 router.use('/stations', stationRoutes);
 router.use('/lockers', lockerRoutes);
 router.use('/products', productRoutes);

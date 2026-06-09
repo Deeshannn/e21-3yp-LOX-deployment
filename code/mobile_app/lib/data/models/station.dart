@@ -3,6 +3,11 @@ class Station {
     required this.id,
     required this.name,
     required this.code,
+    required this.timezone,
+    required this.openTime,
+    required this.closeTime,
+    required this.scheduleEnabled,
+    required this.emergencyMode,
     this.latitude,
     this.longitude,
   });
@@ -10,6 +15,11 @@ class Station {
   final String id;
   final String name;
   final String code;
+  final String timezone;
+  final String openTime;
+  final String closeTime;
+  final bool scheduleEnabled;
+  final bool emergencyMode;
   final double? latitude;
   final double? longitude;
 
@@ -25,10 +35,17 @@ class Station {
         ? (coords[1] as num?)?.toDouble()
         : null;
 
+    final schedule = json['schedule'] as Map<String, dynamic>? ?? const {};
+
     return Station(
-      id: json['_id']?.toString() ?? '',
+      id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Unknown station',
       code: json['code']?.toString() ?? '-',
+      timezone: json['timezone']?.toString() ?? 'Asia/Colombo',
+      openTime: schedule['openTime']?.toString() ?? '08:00',
+      closeTime: schedule['closeTime']?.toString() ?? '20:00',
+      scheduleEnabled: schedule['enabled'] != false,
+      emergencyMode: json['emergencyMode'] == true,
       latitude: lat,
       longitude: lng,
     );
