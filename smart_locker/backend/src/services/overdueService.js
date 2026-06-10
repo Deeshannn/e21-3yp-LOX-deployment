@@ -45,11 +45,28 @@ function getReservationPhase(locker, station) {
     const graceEndsAt = new Date(releasedAt + gracePeriodMs);
     const graceRemainingMs = graceEndsAt.getTime() - now;
 
+    if (graceRemainingMs > 0) {
+      return {
+        phase: ReservationPhase.OVERDUE_RELEASED,
+        timeRemainingMs: graceRemainingMs,
+        overdueMs: 0,
+        chargeAmount: 0,
+        graceEndsAt,
+        freeEndsAt
+      };
+    }
+
+    // Grace period has expired! Revert to OVERDUE.
+    // Calculate overdue duration starting from when the grace period ended.
+    const overdueMs = now - graceEndsAt.getTime();
+    const overdueHours = overdueMs / (1000 * 60 * 60);
+    const chargeAmount = Math.max(parseFloat((overdueHours * ratePerHour).toFixed(2)), 0.50); // minimum $0.50
+
     return {
-      phase: ReservationPhase.OVERDUE_RELEASED,
-      timeRemainingMs: Math.max(0, graceRemainingMs),
-      overdueMs: 0,
-      chargeAmount: 0,
+      phase: ReservationPhase.OVERDUE,
+      timeRemainingMs: 0,
+      overdueMs,
+      chargeAmount,
       graceEndsAt,
       freeEndsAt
     };

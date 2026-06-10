@@ -83,6 +83,22 @@ class ApiClient {
     return payload;
   }
 
+  String _getFrontendOrigin() {
+    try {
+      final uri = Uri.parse(baseUrl);
+      final host = uri.host;
+      final scheme = uri.scheme;
+      if (uri.port == 3001) {
+        return '$scheme://$host:3000';
+      }
+      return uri.port != 0 && uri.port != 80 && uri.port != 443
+          ? '$scheme://$host:${uri.port}'
+          : '$scheme://$host';
+    } catch (_) {
+      return 'http://localhost:3000';
+    }
+  }
+
   Future<AuthResult> login({
     required String email,
     required String password,
@@ -282,11 +298,16 @@ class ApiClient {
 
   /// Create a Stripe overdue checkout session for the given locker.
   /// Returns { checkoutUrl, sessionId, chargeAmount, overdueMinutes, ... }
+  /// Uses the loxapp:// deep-link scheme so Stripe redirects back to the app.
   Future<Map<String, dynamic>> createOverdueCheckout(String lockerId) async {
     return await _request(
       'POST',
       '/payments/overdue-checkout',
-      body: {'lockerId': lockerId},
+      body: {
+        'lockerId': lockerId,
+        'origin': 'loxapp://payment',
+        'isMobile': true,
+      },
     );
   }
 
@@ -412,6 +433,8 @@ class ApiClient {
         'productId': productId,
         'quantity': quantity,
         'selectedColor': color,
+        'origin': _getFrontendOrigin(),
+        'isMobile': true,
       },
     );
   }

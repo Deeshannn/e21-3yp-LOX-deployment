@@ -23,7 +23,7 @@ class StoreScreen extends StatefulWidget {
   State<StoreScreen> createState() => _StoreScreenState();
 }
 
-class _StoreScreenState extends State<StoreScreen> {
+class _StoreScreenState extends State<StoreScreen> with WidgetsBindingObserver {
   // UI Tabs State
   int _activeSubTab = 0; // 0: Marketplace, 1: Order History
 
@@ -41,7 +41,22 @@ class _StoreScreenState extends State<StoreScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadStoreData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('LoX App Resumed: auto-refreshing store data...');
+      _loadStoreData();
+    }
   }
 
   Future<void> _loadStoreData() async {

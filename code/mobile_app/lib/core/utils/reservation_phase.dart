@@ -74,9 +74,25 @@ ReservationStatus computeReservationStatus(Locker locker, Station station) {
   if (locker.overdueReleasedAt != null) {
     final graceEndsAt = locker.overdueReleasedAt!.add(gracePeriod);
     final graceRemaining = graceEndsAt.difference(now);
+    
+    if (graceRemaining.isNegative) {
+      // Grace period expired! Revert to overdue.
+      final overdueElapsed = now.difference(graceEndsAt);
+      final overdueHours = overdueElapsed.inMilliseconds / (1000 * 60 * 60);
+      final charge = (overdueHours * station.overdueRatePerHour).clamp(0.50, double.infinity);
+      return ReservationStatus(
+        phase: ReservationPhase.overdue,
+        timeRemainingMs: 0,
+        overdueMs: overdueElapsed.inMilliseconds,
+        chargeAmount: double.parse(charge.toStringAsFixed(2)),
+        graceEndsAt: graceEndsAt,
+        freeEndsAt: freeEndsAt,
+      );
+    }
+
     return ReservationStatus(
       phase: ReservationPhase.overdueReleased,
-      timeRemainingMs: graceRemaining.isNegative ? 0 : graceRemaining.inMilliseconds,
+      timeRemainingMs: graceRemaining.inMilliseconds,
       overdueMs: 0,
       chargeAmount: 0,
       graceEndsAt: graceEndsAt,

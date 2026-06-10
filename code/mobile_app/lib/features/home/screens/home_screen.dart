@@ -26,10 +26,10 @@ class HomeScreen extends StatefulWidget {
   final Future<void> Function() onLogout;
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Navigation State
   int _tabIndex = 0;
 
@@ -49,11 +49,30 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Maps a Station ID to its corresponding list of Lockers.
   final Map<String, List<Locker>> _lockersByStation = {};
 
+  Future<void> refreshData() async {
+    await _loadData();
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _user = widget.session.user;
     _loadUiPrefsAndData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('LoX App Resumed: auto-refreshing dashboard data...');
+      _loadData();
+    }
   }
 
   /// Initializes the screen by loading local user preferences first,

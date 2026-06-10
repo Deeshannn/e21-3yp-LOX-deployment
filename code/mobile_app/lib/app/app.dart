@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/utils/url_utils.dart';
@@ -31,6 +34,13 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
   SessionData? _session;
   String? _bootError;
 
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
+
+  // Deep-link listener for payment callbacks (loxapp://payment?payment=...)
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _deepLinkSub;
+
   // Get the base url state
   String get _baseUrl => normalizeApiBaseUrl(AppConstants.defaultApiBaseUrl);
 
@@ -39,6 +49,123 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
   void initState() {
     super.initState();
     _restoreSession();
+    _initDeepLinks();
+  }
+
+  @override
+  void dispose() {
+    _deepLinkSub?.cancel();
+    super.dispose();
+  }
+
+  /// Listen for incoming deep links from the loxapp:// scheme.
+  /// Stripe redirects here after payment success or cancel.
+  void _initDeepLinks() {
+    _deepLinkSub = _appLinks.uriLinkStream.listen(
+      (uri) => _handleDeepLink(uri),
+      onError: (err) => debugPrint('[DeepLink] Error: $err'),
+    );
+  }
+
+  void _handleDeepLink(Uri uri) {
+    debugPrint('[DeepLink] Received: $uri');
+    
+    // Support both direct parameter and URL path formats
+    String? payment = uri.queryParameters['payment'];
+    if (payment == null) {
+      final isSuccess = uri.host == 'payment-success' || uri.path.contains('payment-success');
+      final isCancel = uri.host == 'payment-cancel' || uri.path.contains('payment-cancel');
+      final type = uri.queryParameters['type'];
+      
+      if (type == 'overdue') {
+        if (isSuccess) {
+          payment = 'overdue_success';
+        } else if (isCancel) {
+          payment = 'overdue_cancel';
+        }
+      } else if (type == 'store') {
+        if (isSuccess) {
+          payment = 'store_success';
+        } else if (isCancel) {
+          payment = 'store_cancel';
+        }
+      }
+    }
+
+    if (payment == null) return;
+
+    // Use a short delay so the app is fully foregrounded before showing UI
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      final ctx = _navigatorKey.currentContext;
+      if (ctx == null) return;
+      if (payment == 'overdue_success') {
+        _showPaymentResult(
+          ctx,
+          success: true,
+          title: 'Payment Successful',
+          message: 'Your overdue fee has been paid. You now have a grace period — unlock your locker and retrieve your items.',
+          onDismiss: () {
+            _homeKey.currentState?.refreshData();
+          },
+        );
+      } else if (payment == 'overdue_cancel') {
+        _showPaymentResult(
+          ctx,
+          success: false,
+          title: 'Payment Cancelled',
+          message: 'The payment was cancelled. Your locker is still locked until the overdue fee is paid.',
+          onDismiss: () {
+            _homeKey.currentState?.refreshData();
+          },
+        );
+      }
+    });
+  }
+
+  void _showPaymentResult(
+    BuildContext ctx, {
+    required bool success,
+    required String title,
+    required String message,
+    VoidCallback? onDismiss,
+  }) {
+    showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: Icon(
+          success ? Icons.check_circle_rounded : Icons.cancel_rounded,
+          color: success ? const Color(0xFF027A48) : const Color(0xFFC81E1E),
+          size: 52,
+        ),
+        title: Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(height: 1.45),
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: success ? const Color(0xFF027A48) : const Color(0xFF64674B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              minimumSize: const Size(double.infinity, 44),
+            ),
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              if (onDismiss != null) onDismiss();
+            },
+            child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Asynchronously check for a saved token and attempt to restore the session.
@@ -131,6 +258,7 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Smart Locker',
+      navigatorKey: _navigatorKey,
       scaffoldMessengerKey: FirebaseNotificationService.instance.scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -152,7 +280,8 @@ class _SmartLockerAppState extends State<SmartLockerApp> {
               onAuthSuccess: _handleAuthSuccess,
             )
           // Valid session: Show HomeScreen and pass the logout callback
-          : HomeScreen(session: _session!, onLogout: _logout),
+          : HomeScreen(key: _homeKey, session: _session!, onLogout: _logout),
     );
   }
 }
+

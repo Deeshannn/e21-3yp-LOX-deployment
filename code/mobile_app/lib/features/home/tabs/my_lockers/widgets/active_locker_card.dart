@@ -99,7 +99,11 @@ class _ActiveLockerCardState extends State<ActiveLockerCard> {
     );
   }
 
-  /// Opens the Stripe overdue checkout URL in the browser.
+  /// Opens the Stripe overdue checkout URL in the external browser.
+  /// When Stripe completes (success or cancel) it deep-links back via
+  /// loxapp://payment/?payment=overdue_success which brings the app to
+  /// foreground. The HomeScreen's didChangeAppLifecycleState handler
+  /// refreshes all data automatically.
   Future<void> _onPayOverduePressed() async {
     setState(() => _busy = true);
     try {
@@ -108,11 +112,13 @@ class _ActiveLockerCardState extends State<ActiveLockerCard> {
       if (checkoutUrl.isEmpty) throw Exception('No checkout URL received');
 
       final uri = Uri.parse(checkoutUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        _show('Complete the payment in the browser, then return here and refresh.');
-      } else {
-        _show('Could not open payment page. Please try again.');
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('Could not launch browser for Stripe checkout');
+      }
+      // Show a dismissible banner while the user is in the browser.
+      // The app refreshes automatically when it resumes via deep link.
+      if (mounted) {
+        _show('Stripe checkout opened. Complete payment and return to the app.');
       }
     } catch (e) {
       _show('Payment error: ${e.toString()}');

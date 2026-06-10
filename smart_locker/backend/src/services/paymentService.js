@@ -19,7 +19,36 @@ function getStripeClient() {
 }
 
 function buildOrigin(req) {
-  return req.headers.origin || env.frontendUrl || 'http://localhost:3000';
+  // Mobile apps send a deep-link scheme as the origin (e.g. "loxapp://payment").
+  // Pass it through verbatim – no host/port rewriting needed.
+  if (req && req.body && req.body.origin) {
+    const origin = req.body.origin;
+    if (origin.startsWith('loxapp://') || origin.startsWith('smartlocker://')) {
+      return origin;
+    }
+    return origin;
+  }
+  if (req && req.headers.origin) {
+    return req.headers.origin;
+  }
+  if (req && req.get) {
+    const host = req.get('host'); // e.g. "192.168.8.186:3001" or "localhost:3001"
+    if (host) {
+      const protocol = req.protocol || 'http';
+      if (host.includes(':')) {
+        const parts = host.split(':');
+        if (parts[1] === '3001') {
+          return `${protocol}://${parts[0]}:3000`;
+        }
+        return `${protocol}://${parts[0]}:${parts[1]}`;
+      }
+      return `${protocol}://${host}`;
+    }
+  }
+  if (env.frontendUrl) {
+    return env.frontendUrl;
+  }
+  return 'http://localhost:3000';
 }
 
 function toMinorUnit(amount) {
@@ -67,14 +96,31 @@ async function createCheckoutSession(user, payload, req) {
     status: 'PENDING'
   });
 
+  const isMobile = Boolean(payload.isMobile);
   const stripe = getStripeClient();
   const origin = buildOrigin(req);
+
+  let successUrl, cancelUrl;
+  if (isMobile && req && req.get) {
+    const host = req.get('host');
+    const protocol = req.protocol || 'http';
+    const backendUrl = `${protocol}://${host}/api/payments`;
+    successUrl = `${backendUrl}/mobile/success?session_id={CHECKOUT_SESSION_ID}&type=store`;
+    cancelUrl = `${backendUrl}/mobile/cancel?session_id={CHECKOUT_SESSION_ID}&type=store`;
+  } else {
+    const host = req && req.get ? req.get('host') : 'localhost:3001';
+    const protocol = (req && req.protocol) || 'http';
+    const backendUrl = `${protocol}://${host}/api/payments`;
+    successUrl = `${backendUrl}/web/success?session_id={CHECKOUT_SESSION_ID}&type=store&origin=${encodeURIComponent(origin)}`;
+    cancelUrl = `${origin}/?payment=cancel&session_id={CHECKOUT_SESSION_ID}`;
+  }
+
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: 'payment',
     customer_email: user.email,
     client_reference_id: String(user._id),
-    success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/?payment=cancel&session_id={CHECKOUT_SESSION_ID}`,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
     line_items: [
       {
         quantity,
@@ -170,14 +216,31 @@ async function createOverdueCheckoutSession(user, lockerId, req) {
     notes: `Overdue by ${overdueMinutes} minutes at ${stationName}`
   });
 
+  const isMobile = req && req.body && Boolean(req.body.isMobile);
   const stripe = getStripeClient();
   const origin = buildOrigin(req);
+
+  let successUrl, cancelUrl;
+  if (isMobile && req && req.get) {
+    const host = req.get('host');
+    const protocol = req.protocol || 'http';
+    const backendUrl = `${protocol}://${host}/api/payments`;
+    successUrl = `${backendUrl}/mobile/success?session_id={CHECKOUT_SESSION_ID}&type=overdue&lockerId=${lockerId}`;
+    cancelUrl = `${backendUrl}/mobile/cancel?session_id={CHECKOUT_SESSION_ID}&type=overdue&lockerId=${lockerId}`;
+  } else {
+    const host = req && req.get ? req.get('host') : 'localhost:3001';
+    const protocol = (req && req.protocol) || 'http';
+    const backendUrl = `${protocol}://${host}/api/payments`;
+    successUrl = `${backendUrl}/web/success?session_id={CHECKOUT_SESSION_ID}&type=overdue&lockerId=${lockerId}&origin=${encodeURIComponent(origin)}`;
+    cancelUrl = `${origin}/?payment=overdue_cancel&session_id={CHECKOUT_SESSION_ID}&lockerId=${lockerId}`;
+  }
+
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: 'payment',
     customer_email: user.email,
     client_reference_id: String(user._id),
-    success_url: `${origin}/?payment=overdue_success&session_id={CHECKOUT_SESSION_ID}&lockerId=${lockerId}`,
-    cancel_url: `${origin}/?payment=overdue_cancel&session_id={CHECKOUT_SESSION_ID}&lockerId=${lockerId}`,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
     line_items: [
       {
         quantity: 1,
@@ -215,47 +278,61 @@ async function createOverdueCheckoutSession(user, lockerId, req) {
   };
 }
 
+async function fulfillCheckoutSession(session) {
+  console.log('[fulfillCheckoutSession] Starting fulfillment for session:', session.id);
+  const order = await findOrderByStripeSessionId(session.id);
+  if (!order) {
+    console.warn('[fulfillCheckoutSession] Order not found for stripeSessionId:', session.id);
+    return null;
+  }
+
+  // If already paid, don't repeat the fulfillment
+  if (order.status === 'PAID') {
+    console.log('[fulfillCheckoutSession] Order is already PAID. Skipping duplicate fulfillment.');
+    return order;
+  }
+
+  const updatedOrder = await updateOrderByStripeSessionId(session.id, {
+    status: 'PAID',
+    stripePaymentStatus: session.payment_status || 'paid',
+    stripePaymentIntentId: String(session.payment_intent || ''),
+    customerEmail: session.customer_details?.email || session.customer_email || order.customerEmail || '',
+    paidAt: new Date(),
+    notes: 'Payment confirmed by checkout completion'
+  });
+  console.log('[fulfillCheckoutSession] Order status updated to PAID for order:', updatedOrder._id);
+
+  // --- Handle overdue fee payment ---
+  const lockerId = session.metadata?.lockerId;
+  const isOverdueFee = session.metadata?.type === 'OVERDUE_FEE';
+  if (isOverdueFee && lockerId) {
+    try {
+      console.log('[fulfillCheckoutSession] Processing overdue fee release for lockerId:', lockerId);
+      const locker = await markOverdueReleased(lockerId, updatedOrder._id);
+      console.log('[fulfillCheckoutSession] Locker overdueReleasedAt marked as:', locker.overdueReleasedAt);
+      await sendPushNotification(
+        locker.currentUserId,
+        'Overdue Fee Paid — Grace Period Started',
+        `Payment confirmed! You now have a grace period to unlock locker ${locker.code} and retrieve your items.`,
+        {
+          type: 'OVERDUE_RELEASED',
+          lockerId: String(locker._id),
+          lockerCode: locker.code
+        }
+      );
+    } catch (err) {
+      console.error('[Session Fulfillment] Failed to mark locker overdue-released:', err.message);
+    }
+  }
+
+  return updatedOrder;
+}
+
 async function handleStripeWebhookEvent(event) {
   const session = event.data.object;
 
   if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-    const order = await findOrderByStripeSessionId(session.id);
-    if (!order) {
-      return null;
-    }
-
-    const updatedOrder = await updateOrderByStripeSessionId(session.id, {
-      status: 'PAID',
-      stripePaymentStatus: session.payment_status || 'paid',
-      stripePaymentIntentId: String(session.payment_intent || ''),
-      customerEmail: session.customer_details?.email || session.customer_email || order.customerEmail || '',
-      paidAt: new Date(),
-      notes: 'Payment confirmed by Stripe webhook'
-    });
-
-    // --- Handle overdue fee payment ---
-    const lockerId = session.metadata?.lockerId;
-    const isOverdueFee = session.metadata?.type === 'OVERDUE_FEE';
-    if (isOverdueFee && lockerId) {
-      try {
-        const locker = await markOverdueReleased(lockerId, updatedOrder._id);
-        await sendPushNotification(
-          locker.currentUserId,
-          'Overdue Fee Paid — Grace Period Started',
-          `Payment confirmed! You now have a grace period to unlock locker ${locker.code} and retrieve your items.`,
-          {
-            type: 'OVERDUE_RELEASED',
-            lockerId: String(locker._id),
-            lockerCode: locker.code
-          }
-        );
-      } catch (err) {
-        // Log but don't fail the webhook
-        console.error('[Webhook] Failed to mark locker overdue-released:', err.message);
-      }
-    }
-
-    return updatedOrder;
+    return fulfillCheckoutSession(session);
   }
 
   if (event.type === 'checkout.session.expired') {
@@ -278,5 +355,6 @@ async function handleStripeWebhookEvent(event) {
 module.exports = {
   createCheckoutSession,
   createOverdueCheckoutSession,
+  fulfillCheckoutSession,
   handleStripeWebhookEvent
 };
