@@ -10,6 +10,9 @@ class Station {
     required this.emergencyMode,
     this.latitude,
     this.longitude,
+    this.freeDurationMinutes = 60,
+    this.gracePeriodMinutes = 10,
+    this.overdueRatePerHour = 1.0,
   });
 
   final String id;
@@ -22,6 +25,9 @@ class Station {
   final bool emergencyMode;
   final double? latitude;
   final double? longitude;
+  final int freeDurationMinutes;
+  final int gracePeriodMinutes;
+  final double overdueRatePerHour;
 
   factory Station.fromJson(Map<String, dynamic> json) {
     final loc = json['location'] as Map<String, dynamic>?;
@@ -48,6 +54,9 @@ class Station {
       emergencyMode: json['emergencyMode'] == true,
       latitude: lat,
       longitude: lng,
+      freeDurationMinutes: (json['freeDurationMinutes'] as num?)?.toInt() ?? 60,
+      gracePeriodMinutes: (json['gracePeriodMinutes'] as num?)?.toInt() ?? 10,
+      overdueRatePerHour: (json['overdueRatePerHour'] as num?)?.toDouble() ?? 1.0,
     );
   }
 }

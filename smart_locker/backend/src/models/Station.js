@@ -12,11 +12,15 @@ const stationSchema = new mongoose.Schema(
     },
     emergencyMode: { type: Boolean, default: false },
 
+    // Overdue / free-duration configuration
+    freeDurationMinutes: { type: Number, default: 60, min: 0 },
+    overdueRatePerHour: { type: Number, default: 1.00, min: 0 },
+    gracePeriodMinutes: { type: Number, default: 10, min: 1 },
+
     location: {
       type: {
-        type: String, 
+        type: String,
         enum: ['Point'], // MongoDB requires this exact string for GeoJSON
-        default: "Point",
         required: false
       },
       coordinates: {

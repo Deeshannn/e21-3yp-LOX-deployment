@@ -96,6 +96,9 @@ async function assignWaitingQueue(stationId) {
   freeLocker.isBooked = true;
   freeLocker.currentUserId = request.userId;
   freeLocker.activeRequestId = request._id;
+  freeLocker.reservedAt = new Date();
+  freeLocker.overdueReleasedAt = null;
+  freeLocker.overduePaymentId = null;
   await freeLocker.save();
   await publishLockerBookingStatus(freeLocker);
 
@@ -170,6 +173,9 @@ async function approveRequest(user, requestId) {
   freeLocker.isBooked = true;
   freeLocker.currentUserId = request.userId;
   freeLocker.activeRequestId = request._id;
+  freeLocker.reservedAt = new Date();
+  freeLocker.overdueReleasedAt = null;
+  freeLocker.overduePaymentId = null;
   await freeLocker.save();
   await publishLockerBookingStatus(freeLocker);
 

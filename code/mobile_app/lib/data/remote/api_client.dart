@@ -275,6 +275,21 @@ class ApiClient {
     await _request('POST', '/lockers/$lockerId/security-ignore');
   }
 
+  /// Fetch the current reservation phase and countdown data for a locker.
+  Future<Map<String, dynamic>> fetchLockerStatus(String lockerId) async {
+    return await _request('GET', '/lockers/$lockerId/status');
+  }
+
+  /// Create a Stripe overdue checkout session for the given locker.
+  /// Returns { checkoutUrl, sessionId, chargeAmount, overdueMinutes, ... }
+  Future<Map<String, dynamic>> createOverdueCheckout(String lockerId) async {
+    return await _request(
+      'POST',
+      '/payments/overdue-checkout',
+      body: {'lockerId': lockerId},
+    );
+  }
+
   // Admin Request Handlers
   Future<void> approveRequest(String requestId) async {
     await _request('POST', '/requests/$requestId/approve');

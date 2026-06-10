@@ -40,7 +40,7 @@ function App() {
   });
   const [requestForm, setRequestForm] = React.useState({ stationId: '', note: '' });
 
-  const { stations, selectedStationId, setSelectedStationId, lockers, requests, queueEntries, events, load } =
+  const { stations, selectedStationId, setSelectedStationId, lockers, requests, queueEntries, events, overdueLockers, load } =
     useDashboardData(token, user);
 
   React.useEffect(() => {
@@ -50,6 +50,20 @@ function App() {
 
     load().catch((err) => setError(err.message));
   }, [token, user, load]);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentState = params.get('payment');
+    if (paymentState === 'overdue_success') {
+      setMessage('Overdue payment completed successfully! Your grace period has started.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      load().catch(() => {});
+    } else if (paymentState === 'overdue_cancel') {
+      setError('Overdue payment checkout was cancelled.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      load().catch(() => {});
+    }
+  }, [load]);
 
   React.useEffect(() => {
     if (!token || !user || user.role !== 'USER' || !requests.length) {
@@ -280,6 +294,24 @@ function App() {
   const onLockAll = (stationId) =>
     withRefresh(() => apiRequest(`/stations/${stationId}/lock-all`, { method: 'POST', headers }));
 
+  const onOverduePayment = async (lockerId) => {
+    setError('');
+    setMessage('');
+    try {
+      const data = await apiRequest('/payments/overdue-checkout', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ lockerId })
+      });
+      const checkoutUrl = data.checkoutUrl;
+      if (checkoutUrl) {
+        window.open(checkoutUrl, '_blank');
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const onChangeSchedule = (station) => {
     const openTime = window.prompt('Open time (HH:MM)', station.schedule.openTime) || station.schedule.openTime;
     const closeTime =
@@ -327,6 +359,7 @@ function App() {
       requests={requests}
       queueEntries={queueEntries}
       events={events}
+      overdueLockers={overdueLockers}
       stationForm={stationForm}
       lockerForm={lockerForm}
       requestForm={requestForm}
@@ -349,6 +382,7 @@ function App() {
       onLock={onLock}
       onRelease={onRelease}
       onIgnoreSecurity={onIgnoreSecurity}
+      onOverduePayment={onOverduePayment}
       onUpdateProfile={onUpdateProfile}
       onClearError={clearError}
       onClearMessage={clearMessage}

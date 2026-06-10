@@ -25,9 +25,16 @@ const RequestStatuses = {
   COMPLETED: 'COMPLETED'
 };
 
+const ReservationPhase = {
+  ACTIVE: 'ACTIVE',                       // within free window
+  OVERDUE: 'OVERDUE',                     // free window expired, payment needed
+  OVERDUE_RELEASED: 'OVERDUE_RELEASED'    // payment done, grace period active
+};
+
 module.exports = {
   Roles,
   LockerStates,
   DoorStates,
-  RequestStatuses
+  RequestStatuses,
+  ReservationPhase
 };

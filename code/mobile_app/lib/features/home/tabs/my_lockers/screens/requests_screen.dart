@@ -110,6 +110,16 @@ class RequestsScreen extends StatelessWidget {
                 ActiveLockerCard(
                   locker: activeLocker,
                   stationName: stationMap[activeRequest.stationId]?.name ?? activeRequest.stationName.ifEmpty('Station'),
+                  station: stationMap[activeRequest.stationId] ?? Station(
+                    id: activeRequest.stationId,
+                    name: activeRequest.stationName.ifEmpty('Station'),
+                    code: '',
+                    timezone: 'Asia/Colombo',
+                    openTime: '08:00',
+                    closeTime: '20:00',
+                    scheduleEnabled: true,
+                    emergencyMode: false,
+                  ),
                   client: client,
                   onRefresh: onRefresh,
                 ),

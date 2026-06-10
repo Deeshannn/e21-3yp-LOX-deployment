@@ -8,6 +8,8 @@ import AccountPanel from '../components/dashboard/AccountPanel';
 import HelpPanel from '../components/dashboard/HelpPanel';
 import AnalyticsPanel from '../components/dashboard/AnalyticsPanel';
 import StorePanel from '../components/marketplace/StorePanel';
+import FreeDurationPanel from '../components/dashboard/FreeDurationPanel';
+import OverduePanel from '../components/dashboard/OverduePanel';
 
 function createProfileForm(user) {
   return {
@@ -35,6 +37,7 @@ function DashboardPage(props) {
     requests,
     queueEntries,
     events,
+    overdueLockers,
     requestForm,
     onRefresh,
     onLogout,
@@ -48,6 +51,7 @@ function DashboardPage(props) {
     onLock,
     onRelease,
     onIgnoreSecurity,
+    onOverduePayment,
     onUpdateProfile,
     onClearError,
     onClearMessage,
@@ -101,6 +105,11 @@ function DashboardPage(props) {
         '--home-background-image': 'none'
       };
 
+  // Determine the currently selected station object (for overdue panel)
+  const selectedStation = stations.find((s) => s._id === selectedStationId) || stations[0] || null;
+
+  const isAdmin = user.role === 'SUB_ADMIN' || user.role === 'SUPER_ADMIN';
+
   return (
     <div className="page dashboard-page">
       <HeaderBar
@@ -138,9 +147,27 @@ function DashboardPage(props) {
             onLock={onLock}
             onRelease={onRelease}
             onIgnoreSecurity={onIgnoreSecurity}
+            onOverduePayment={onOverduePayment}
+            token={token}
           />
 
           <QueuePanel queueEntries={queueEntries} />
+
+          {/* Sub-admin / Super-admin: Free Duration Settings + Overdue Monitoring */}
+          {isAdmin ? (
+            <>
+              <FreeDurationPanel
+                stations={stations}
+                selectedStationId={selectedStationId}
+                token={token}
+                onRefresh={onRefresh}
+              />
+              <OverduePanel
+                station={selectedStation}
+                overdueLockers={overdueLockers}
+              />
+            </>
+          ) : null}
         </main>
       ) : null}
 

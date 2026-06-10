@@ -8,6 +8,7 @@ export function useDashboardData(token, user) {
   const [requests, setRequests] = React.useState([]);
   const [queueEntries, setQueueEntries] = React.useState([]);
   const [events, setEvents] = React.useState([]);
+  const [overdueLockers, setOverdueLockers] = React.useState([]);
 
   const headers = React.useMemo(() => authHeaders(token), [token]);
 
@@ -37,16 +38,23 @@ export function useDashboardData(token, user) {
     if (!stationIdToLoad) {
       setLockers([]);
       setQueueEntries([]);
+      setOverdueLockers([]);
       return;
     }
 
-    const [lockerData, queueData] = await Promise.all([
+    const isAdmin = user.role === 'SUB_ADMIN' || user.role === 'SUPER_ADMIN';
+
+    const [lockerData, queueData, overdueData] = await Promise.all([
       apiRequest(`/lockers?stationId=${stationIdToLoad}`, { headers }),
-      apiRequest(`/queue?stationId=${stationIdToLoad}`, { headers })
+      apiRequest(`/queue?stationId=${stationIdToLoad}`, { headers }),
+      isAdmin
+        ? apiRequest(`/stations/${stationIdToLoad}/overdue-lockers`, { headers })
+        : Promise.resolve({ overdueLockers: [] })
     ]);
 
     setLockers(lockerData.lockers || []);
     setQueueEntries(queueData.queueEntries || []);
+    setOverdueLockers(overdueData.overdueLockers || []);
   }, [headers, selectedStationId, token, user]);
 
   React.useEffect(() => {
@@ -69,6 +77,7 @@ export function useDashboardData(token, user) {
     requests,
     queueEntries,
     events,
+    overdueLockers,
     load
   };
 }

@@ -2,6 +2,7 @@ const express = require('express');
 const {
   listLockersHandler,
   createLockerHandler,
+  getLockerStatusHandler,
   unlockLockerHandler,
   lockLockerHandler,
   releaseLockerHandler,
@@ -15,6 +16,7 @@ const router = express.Router();
 router.use(requireAuth);
 router.get('/', listLockersHandler);
 router.post('/', allowRoles([Roles.SUPER_ADMIN, Roles.SUB_ADMIN]), createLockerHandler);
+router.get('/:lockerId/status', getLockerStatusHandler);
 router.post('/:lockerId/unlock', unlockLockerHandler);
 router.post('/:lockerId/lock', lockLockerHandler);
 router.post('/:lockerId/release', releaseLockerHandler);

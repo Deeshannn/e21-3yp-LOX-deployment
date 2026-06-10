@@ -1,7 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const { success } = require('../presenters/apiPresenter');
 const { getStationsForUser, getAllStations, createStation } = require('../services/stationService');
-const { updateSchedule, commandAll } = require('../services/stationActionService');
+const { updateSchedule, commandAll, updateFreeDuration, getOverdueLockers } = require('../services/stationActionService');
 const { validateCreateStationPayload } = require('../validations/stationValidate');
 
 const listStations = asyncHandler(async (req, res) => {
@@ -41,11 +41,33 @@ const lockAllHandler = asyncHandler(async (req, res) => {
   return success(res, { message: 'All lockers locked', affectedLockers: count });
 });
 
+/**
+ * PATCH /stations/:stationId/free-duration
+ * Update free duration, overdue rate, and grace period settings for a station.
+ * Accessible by SUB_ADMIN (own station) and SUPER_ADMIN.
+ */
+const updateFreeDurationHandler = asyncHandler(async (req, res) => {
+  const station = await updateFreeDuration(req.user, req.params.stationId, req.body);
+  return success(res, { station });
+});
+
+/**
+ * GET /stations/:stationId/overdue-lockers
+ * Returns all currently overdue lockers for the station with computed charge amounts.
+ * Accessible by SUB_ADMIN (own station) and SUPER_ADMIN.
+ */
+const getOverdueLockersHandler = asyncHandler(async (req, res) => {
+  const overdueLockers = await getOverdueLockers(req.user, req.params.stationId);
+  return success(res, { overdueLockers });
+});
+
 module.exports = {
   listStations,
   listAllStations,
   createStationHandler,
   updateScheduleHandler,
   emergencyUnlockHandler,
-  lockAllHandler
+  lockAllHandler,
+  updateFreeDurationHandler,
+  getOverdueLockersHandler
 };

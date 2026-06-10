@@ -17,7 +17,12 @@ const lockerSchema = new mongoose.Schema(
     isBooked: { type: Boolean, default: false },
     currentUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     activeRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'AccessRequest', default: null },
-    lastSeenAt: { type: Date, default: null }
+    lastSeenAt: { type: Date, default: null },
+
+    // Overdue tracking fields
+    reservedAt: { type: Date, default: null },                                         // when booking was assigned
+    overduePaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // order for overdue charge
+    overdueReleasedAt: { type: Date, default: null }                                   // when payment confirmed (grace period starts)
   },
   { timestamps: true }
 );

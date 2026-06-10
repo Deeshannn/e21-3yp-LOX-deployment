@@ -9,6 +9,8 @@ class Locker {
     required this.securityAlertMessage,
     this.currentUserId,
     this.activeRequestId,
+    this.reservedAt,
+    this.overdueReleasedAt,
   });
 
   final String id;
@@ -20,6 +22,8 @@ class Locker {
   final String securityAlertMessage;
   final String? currentUserId;
   final String? activeRequestId;
+  final DateTime? reservedAt;
+  final DateTime? overdueReleasedAt;
 
   factory Locker.fromJson(Map<String, dynamic> json) {
     final userVal = json['currentUserId'];
@@ -38,6 +42,18 @@ class Locker {
       reqId = requestVal?.toString();
     }
 
+    DateTime? reservedAt;
+    final rawReserved = json['reservedAt'];
+    if (rawReserved != null) {
+      reservedAt = DateTime.tryParse(rawReserved.toString());
+    }
+
+    DateTime? overdueReleasedAt;
+    final rawOverdueReleased = json['overdueReleasedAt'];
+    if (rawOverdueReleased != null) {
+      overdueReleasedAt = DateTime.tryParse(rawOverdueReleased.toString());
+    }
+
     return Locker(
       id: json['_id']?.toString() ?? '',
       code: json['code']?.toString() ?? '-',
@@ -48,6 +64,8 @@ class Locker {
       securityAlertMessage: json['securityAlertMessage']?.toString() ?? '',
       currentUserId: uId,
       activeRequestId: reqId,
+      reservedAt: reservedAt,
+      overdueReleasedAt: overdueReleasedAt,
     );
   }
 }

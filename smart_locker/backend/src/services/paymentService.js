@@ -1,8 +1,12 @@
 const stripeLib = require('stripe');
 const { env } = require('../config/env');
 const Product = require('../models/Product');
+const Locker = require('../models/Locker');
+const Station = require('../models/Station');
 const { Roles } = require('../constants/enums');
 const { createOrder, findOrderByStripeSessionId, updateOrderById, updateOrderByStripeSessionId } = require('./orderService');
+const { getReservationPhase, markOverdueReleased } = require('./overdueService');
+const { sendPushNotification } = require('./notificationService');
 
 function getStripeClient() {
   if (!env.stripeSecretKey) {
@@ -110,6 +114,107 @@ async function createCheckoutSession(user, payload, req) {
   };
 }
 
+/**
+ * Create a Stripe checkout session specifically for an overdue locker fee.
+ * @param {object} user - authenticated user
+ * @param {string} lockerId - the locker that is overdue
+ * @param {object} req - express request (for origin)
+ */
+async function createOverdueCheckoutSession(user, lockerId, req) {
+  if (user.role !== Roles.USER) {
+    const error = new Error('Only regular users can pay overdue locker fees');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const locker = await Locker.findById(lockerId);
+  if (!locker) {
+    const error = new Error('Locker not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (String(locker.currentUserId || '') !== String(user._id)) {
+    const error = new Error('You are not the current user of this locker');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const station = await Station.findById(locker.stationId);
+  const { phase, chargeAmount, overdueMs } = getReservationPhase(locker, station || {});
+
+  const { ReservationPhase } = require('../constants/enums');
+  if (phase !== ReservationPhase.OVERDUE) {
+    const error = new Error('This locker is not currently overdue');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const currency = (env.stripeCurrency || 'usd').toLowerCase();
+  const overdueMinutes = Math.ceil(overdueMs / 60000);
+  const stationName = station?.name || 'Locker Station';
+
+  const order = await createOrder({
+    userId: user._id,
+    productId: locker._id,          // reuse productId field to reference the locker
+    productName: `Overdue Fee – Locker ${locker.code}`,
+    productCategory: 'OVERDUE_FEE',
+    selectedColor: '',
+    quantity: 1,
+    unitPrice: chargeAmount,
+    deliveryFee: 0,
+    deliveryDays: 0,
+    currency,
+    amount: chargeAmount,
+    status: 'PENDING',
+    notes: `Overdue by ${overdueMinutes} minutes at ${stationName}`
+  });
+
+  const stripe = getStripeClient();
+  const origin = buildOrigin(req);
+  const checkoutSession = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    customer_email: user.email,
+    client_reference_id: String(user._id),
+    success_url: `${origin}/?payment=overdue_success&session_id={CHECKOUT_SESSION_ID}&lockerId=${lockerId}`,
+    cancel_url: `${origin}/?payment=overdue_cancel&session_id={CHECKOUT_SESSION_ID}&lockerId=${lockerId}`,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency,
+          unit_amount: toMinorUnit(chargeAmount),
+          product_data: {
+            name: `Overdue Fee – Locker ${locker.code}`,
+            description: `Overdue by ${overdueMinutes} min at ${stationName}. Rate: $${station?.overdueRatePerHour ?? 1}/hr`
+          }
+        }
+      }
+    ],
+    metadata: {
+      orderId: String(order.id),
+      userId: String(user._id),
+      lockerId: String(locker._id),
+      lockerCode: locker.code,
+      type: 'OVERDUE_FEE'
+    }
+  });
+
+  const savedOrder = await updateOrderById(order.id, {
+    stripeSessionId: checkoutSession.id,
+    checkoutUrl: checkoutSession.url || '',
+    notes: `Overdue checkout session created. Overdue: ${overdueMinutes} min`
+  });
+
+  return {
+    order: savedOrder,
+    checkoutUrl: checkoutSession.url,
+    sessionId: checkoutSession.id,
+    chargeAmount,
+    overdueMinutes
+  };
+}
+
 async function handleStripeWebhookEvent(event) {
   const session = event.data.object;
 
@@ -119,7 +224,7 @@ async function handleStripeWebhookEvent(event) {
       return null;
     }
 
-    return updateOrderByStripeSessionId(session.id, {
+    const updatedOrder = await updateOrderByStripeSessionId(session.id, {
       status: 'PAID',
       stripePaymentStatus: session.payment_status || 'paid',
       stripePaymentIntentId: String(session.payment_intent || ''),
@@ -127,6 +232,30 @@ async function handleStripeWebhookEvent(event) {
       paidAt: new Date(),
       notes: 'Payment confirmed by Stripe webhook'
     });
+
+    // --- Handle overdue fee payment ---
+    const lockerId = session.metadata?.lockerId;
+    const isOverdueFee = session.metadata?.type === 'OVERDUE_FEE';
+    if (isOverdueFee && lockerId) {
+      try {
+        const locker = await markOverdueReleased(lockerId, updatedOrder._id);
+        await sendPushNotification(
+          locker.currentUserId,
+          'Overdue Fee Paid — Grace Period Started',
+          `Payment confirmed! You now have a grace period to unlock locker ${locker.code} and retrieve your items.`,
+          {
+            type: 'OVERDUE_RELEASED',
+            lockerId: String(locker._id),
+            lockerCode: locker.code
+          }
+        );
+      } catch (err) {
+        // Log but don't fail the webhook
+        console.error('[Webhook] Failed to mark locker overdue-released:', err.message);
+      }
+    }
+
+    return updatedOrder;
   }
 
   if (event.type === 'checkout.session.expired') {
@@ -148,5 +277,6 @@ async function handleStripeWebhookEvent(event) {
 
 module.exports = {
   createCheckoutSession,
+  createOverdueCheckoutSession,
   handleStripeWebhookEvent
 };
