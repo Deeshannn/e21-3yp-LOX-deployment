@@ -15,7 +15,7 @@ function OverduePanel({ station, overdueLockers = [] }) {
   if (!station) {
     return (
       <section className="panel overdue-panel">
-        <h2>🔴 Overdue Lockers</h2>
+        <h2>Overdue Lockers</h2>
         <p className="muted-text">Select a station to view overdue lockers.</p>
       </section>
     );
@@ -25,10 +25,7 @@ function OverduePanel({ station, overdueLockers = [] }) {
     <section className="panel overdue-panel">
       <div className="overdue-header">
         <div>
-          <h2>🔴 Overdue Lockers</h2>
-          <p className="muted-text panel-subtitle">
-            Station: <strong>{station.name}</strong> · Rate: ${station.overdueRatePerHour ?? 1}/hr
-          </p>
+          <h2>Overdue Lockers</h2>
         </div>
         <span className="overdue-badge-count">
           {overdueLockers.length} overdue
@@ -37,7 +34,6 @@ function OverduePanel({ station, overdueLockers = [] }) {
 
       {overdueLockers.length === 0 ? (
         <div className="overdue-empty">
-          <span className="overdue-empty-icon">✅</span>
           <p>No overdue lockers at this station.</p>
         </div>
       ) : (
