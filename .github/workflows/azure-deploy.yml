@@ -25,11 +25,11 @@ jobs:
         working-directory: ./smart_locker/backend
 
       - name: Zip the app
-  run: |
-    cd ./smart_locker/backend
-    zip -r ../../backend.zip .
-    echo "--- Zip contents ---"
-    unzip -l ../../backend.zip | head -20
+        run: |
+          cd ./smart_locker/backend
+          zip -r ../../backend.zip .
+          echo "--- Zip contents ---"
+          unzip -l ../../backend.zip | head -20
 
       - name: Deploy via ZipDeploy
         run: |
