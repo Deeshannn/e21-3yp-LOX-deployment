@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/url_utils.dart';
 import '../../../data/models/auth_result.dart';
 import '../../../data/remote/api_client.dart';
+import '../../../core/services/device_service.dart';
 
 /// The user registration interface for the Smart Locker application.
 ///
@@ -87,13 +88,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _submitting = true);
     try {
+      final deviceData = await DeviceService.getDeviceInfo();
+      final deviceId = deviceData['deviceId'] ?? '';
+      final deviceName = deviceData['deviceName'] ?? '';
+
       final result = await ApiClient(
         baseUrl: baseUrl,
         token: '',
-      ).register(name: name, email: email, password: password);
+      ).mobileRegister(
+        name: name,
+        email: email,
+        password: password,
+        deviceId: deviceId,
+        deviceName: deviceName,
+      );
       await widget.onAuthSuccess(result);
     } catch (e) {
-      if (mounted) _showError(e.toString());
+      if (mounted) _showError(e.toString().replaceAll('Exception: ', ''));
     }
     if (mounted) setState(() => _submitting = false);
   }

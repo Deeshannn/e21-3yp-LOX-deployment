@@ -122,6 +122,80 @@ class ApiClient {
     );
   }
 
+  Future<MobileLoginResult> mobileLogin({
+    required String email,
+    required String password,
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/auth/mobile/login',
+      includeAuth: false,
+      body: {
+        'email': email,
+        'password': password,
+        'deviceId': deviceId,
+        'deviceName': deviceName,
+      },
+    );
+
+    final bool otpRequired = payload['otpRequired'] == true;
+    final String message = payload['message']?.toString() ?? '';
+
+    if (otpRequired) {
+      return MobileLoginResult(
+        otpRequired: true,
+        message: message,
+      );
+    }
+
+    final tkn = payload['token']?.toString() ?? '';
+    if (tkn.isEmpty) throw const ApiError('Login failed: missing token');
+
+    return MobileLoginResult(
+      otpRequired: false,
+      message: message,
+      authResult: AuthResult(
+        baseUrl: baseUrl,
+        token: tkn,
+        user: UserProfile.fromJson(
+          payload['user'] as Map<String, dynamic>? ?? const {},
+        ),
+      ),
+    );
+  }
+
+  Future<AuthResult> verifyMobileOtp({
+    required String email,
+    required String otpCode,
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/auth/mobile/verify-otp',
+      includeAuth: false,
+      body: {
+        'email': email,
+        'otpCode': otpCode,
+        'deviceId': deviceId,
+        'deviceName': deviceName,
+      },
+    );
+
+    final tkn = payload['token']?.toString() ?? '';
+    if (tkn.isEmpty) throw const ApiError('Verification failed: missing token');
+
+    return AuthResult(
+      baseUrl: baseUrl,
+      token: tkn,
+      user: UserProfile.fromJson(
+        payload['user'] as Map<String, dynamic>? ?? const {},
+      ),
+    );
+  }
+
   Future<AuthResult> register({
     required String name,
     required String email,
@@ -137,6 +211,40 @@ class ApiClient {
         'email': email,
         'password': password,
         'stationCode': stationCode,
+      },
+    );
+
+    final tkn = payload['token']?.toString() ?? '';
+    if (tkn.isEmpty) throw const ApiError('Registration failed: missing token');
+
+    return AuthResult(
+      baseUrl: baseUrl,
+      token: tkn,
+      user: UserProfile.fromJson(
+        payload['user'] as Map<String, dynamic>? ?? const {},
+      ),
+    );
+  }
+
+  Future<AuthResult> mobileRegister({
+    required String name,
+    required String email,
+    required String password,
+    required String deviceId,
+    required String deviceName,
+    String stationCode = '',
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/auth/mobile/register',
+      includeAuth: false,
+      body: {
+        'name': name,
+        'email': email,
+        'password': password,
+        'stationCode': stationCode,
+        'deviceId': deviceId,
+        'deviceName': deviceName,
       },
     );
 
@@ -471,4 +579,16 @@ class ApiClient {
       body: {'fcmToken': fcmToken},
     );
   }
+}
+
+class MobileLoginResult {
+  const MobileLoginResult({
+    required this.otpRequired,
+    required this.message,
+    this.authResult,
+  });
+
+  final bool otpRequired;
+  final String message;
+  final AuthResult? authResult;
 }
