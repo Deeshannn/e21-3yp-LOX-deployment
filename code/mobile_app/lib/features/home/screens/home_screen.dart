@@ -154,13 +154,28 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ).showSnackBar(const SnackBar(content: Text('Location saved.')));
   }
 
-  /// Checks if there is an active (PENDING or QUEUED) access request 
-  /// associated with a specific [stationId].
+  /// Checks if there is an active access request associated with a specific [stationId].
+  ///
+  /// PENDING and QUEUED are always considered active.
+  /// APPROVED is only considered active if the user still has a currently booked locker
+  /// at this station — because AccessRequest.status is never changed back from APPROVED
+  /// when a locker is released, so old completed sessions remain as APPROVED in the DB.
   AccessRequest? _activeRequestForStation(String stationId) {
+    final lockers = _lockersByStation[stationId] ?? [];
+
     for (final r in _requests) {
-      if (r.stationId == stationId &&
-          (r.status == 'PENDING' || r.status == 'QUEUED')) {
+      if (r.stationId != stationId) continue;
+
+      if (r.status == 'PENDING' || r.status == 'QUEUED') {
         return r;
+      }
+
+      if (r.status == 'APPROVED') {
+        // Only treat as active if there is a locker currently booked to this user at this station
+        final hasActiveLocker = lockers.any(
+          (l) => l.isBooked && l.currentUserId == _user.id,
+        );
+        if (hasActiveLocker) return r;
       }
     }
     return null;

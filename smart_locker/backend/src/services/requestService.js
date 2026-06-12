@@ -33,6 +33,36 @@ async function listRequests(user, status) {
 }
 
 async function createRequest(user, payload) {
+  // Guard 1: block if there's already a PENDING or QUEUED request at this station
+  const activePendingOrQueued = await AccessRequest.findOne({
+    userId: user._id,
+    stationId: payload.stationId,
+    status: { $in: [RequestStatuses.PENDING, RequestStatuses.QUEUED] }
+  });
+  if (activePendingOrQueued) {
+    const error = new Error('You already have an active request for this station.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  // Guard 2: block if there's an APPROVED request where the locker is STILL booked to this user.
+  // NOTE: AccessRequest status is never changed back from APPROVED when a locker is released,
+  // so we must cross-check the actual Locker document to avoid blocking users with old sessions.
+  const approvedRequest = await AccessRequest.findOne({
+    userId: user._id,
+    stationId: payload.stationId,
+    status: RequestStatuses.APPROVED,
+    lockerId: { $ne: null }
+  });
+  if (approvedRequest) {
+    const locker = await Locker.findById(approvedRequest.lockerId);
+    if (locker && locker.isBooked && String(locker.currentUserId) === String(user._id)) {
+      const error = new Error('You already have an active locker at this station.');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
   return AccessRequest.create({
     userId: user._id,
     stationId: payload.stationId,
@@ -40,6 +70,7 @@ async function createRequest(user, payload) {
     status: RequestStatuses.PENDING
   });
 }
+
 
 async function cancelRequest(user, requestId) {
   const request = await AccessRequest.findById(requestId);
@@ -70,7 +101,8 @@ async function cancelRequest(user, requestId) {
 }
 
 async function assignWaitingQueue(stationId) {
-  const freeLocker = await Locker.findOne({ stationId, isBooked: false }).sort({ createdAt: 1 });
+  // Sort by code ascending so the lowest-numbered locker (e.g. L1 before L2) is always picked first
+  const freeLocker = await Locker.findOne({ stationId, isBooked: false }).sort({ code: 1 });
   if (!freeLocker) {
     return;
   }
@@ -134,7 +166,21 @@ async function approveRequest(user, requestId) {
     throw error;
   }
 
-  const freeLocker = await Locker.findOne({ stationId: request.stationId, isBooked: false }).sort({ createdAt: 1 });
+  // Idempotency guard: if already approved, return the existing state without touching lockers
+  if (request.status === RequestStatuses.APPROVED) {
+    const locker = request.lockerId ? await Locker.findById(request.lockerId) : null;
+    return { queued: false, request, locker };
+  }
+
+  // Status guard: only PENDING requests can be approved
+  if (request.status !== RequestStatuses.PENDING) {
+    const error = new Error(`Cannot approve a request with status: ${request.status}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Sort by code ascending so the lowest-numbered locker (e.g. L1 before L2) is always picked first
+  const freeLocker = await Locker.findOne({ stationId: request.stationId, isBooked: false }).sort({ code: 1 });
   const station = await Station.findById(request.stationId);
   const stationName = station ? station.name : 'Station';
 
