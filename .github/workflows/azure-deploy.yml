@@ -6,8 +6,6 @@ on:
       - feature/mobile_app
     paths:
       - 'smart_locker/backend/**'
-      - '.github/workflows/azure-deploy.yml'
-  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -20,15 +18,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install Dependencies
         run: npm install
         working-directory: ./smart_locker/backend
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: 'smart-locker-backup-api'
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: './smart_locker/backend'
+      - name: Zip the app
+        run: |
+          cd ./smart_locker/backend
+          zip -r ../../backend.zip .
+
+      - name: Deploy via ZipDeploy
+        run: |
+          curl -X POST \
+            "https://smart-locker-backup-api-freycmg3g0b2dbcv.scm.southeastasia-01.azurewebsites.net/api/zipdeploy" \
+            -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+            --data-binary @backend.zip \
+            -H "Content-Type: application/zip"
