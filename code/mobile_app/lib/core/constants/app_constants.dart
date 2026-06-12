@@ -8,6 +8,7 @@ class AppConstants {
     'API_BASE_URL',
     // defaultValue: 'http://172.20.10.7:3001/api',
     // defaultValue: 'http://10.30.7.70:3001/api'
-    defaultValue: 'http://10.187.55.68:3001/api'
+    // defaultValue: 'http://10.30.15.37:3001/api'
+    defaultValue: 'http://10.30.15.37:3001/api',
   );
 }
