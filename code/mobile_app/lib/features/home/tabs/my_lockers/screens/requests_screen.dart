@@ -18,6 +18,7 @@ class RequestsScreen extends StatelessWidget {
     required this.user,
     required this.lockersByStation,
     required this.onRefresh,
+    required this.onLockerAction,
   });
 
   final List<AccessRequest> requests;
@@ -26,6 +27,7 @@ class RequestsScreen extends StatelessWidget {
   final UserProfile user;
   final Map<String, List<Locker>> lockersByStation;
   final Future<void> Function() onRefresh;
+  final Future<void> Function([String?]) onLockerAction;
 
   Locker? _findLockerForRequest(AccessRequest r) {
     if (r.lockerId.isEmpty) return null;
@@ -139,6 +141,7 @@ class RequestsScreen extends StatelessWidget {
                       ),
                   client: client,
                   onRefresh: onRefresh,
+                  onLockerAction: () => onLockerAction(activeRequest!.stationId),
                 ),
                 const SizedBox(height: 20),
               ],

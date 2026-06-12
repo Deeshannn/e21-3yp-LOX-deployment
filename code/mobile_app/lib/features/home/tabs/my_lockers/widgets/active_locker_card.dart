@@ -17,6 +17,7 @@ class ActiveLockerCard extends StatefulWidget {
     required this.station,
     required this.client,
     required this.onRefresh,
+    required this.onLockerAction,
   });
 
   final Locker locker;
@@ -24,6 +25,7 @@ class ActiveLockerCard extends StatefulWidget {
   final Station station;
   final ApiClient client;
   final VoidCallback onRefresh;
+  final VoidCallback onLockerAction;
 
   @override
   State<ActiveLockerCard> createState() => _ActiveLockerCardState();
@@ -73,7 +75,7 @@ class _ActiveLockerCardState extends State<ActiveLockerCard> {
     try {
       await command();
       _show(successMsg);
-      widget.onRefresh();
+      widget.onLockerAction();
     } catch (e) {
       _show(e.toString());
     } finally {
