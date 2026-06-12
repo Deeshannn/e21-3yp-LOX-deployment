@@ -6,6 +6,8 @@ on:
       - feature/mobile_app
     paths:
       - 'smart_locker/backend/**'
+      - '.github/workflows/azure-deploy.yml'
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -18,7 +20,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
 
       - name: Install Dependencies
         run: npm install
