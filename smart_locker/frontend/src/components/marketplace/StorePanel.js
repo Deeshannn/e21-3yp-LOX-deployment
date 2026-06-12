@@ -184,7 +184,7 @@ function parseFeatureList(value) {
     .map((item) => item.trim())
     .filter(Boolean);
 }
-
+/*
 function parseColorList(value) {
   const parsed = String(value || '')
     .split('|')
@@ -232,7 +232,7 @@ function loadStoreSettings() {
     return buildDefaultStoreSettings();
   }
 }
-
+*/
 function readImageAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
