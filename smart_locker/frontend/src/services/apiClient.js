@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = 'https://smart-locker-backup-api-freycmg3g0b2dbcv.eastasia-01.azurewebsites.net/api';
 
 export async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, options);
