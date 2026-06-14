@@ -10,4 +10,6 @@ const queueEntrySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+queueEntrySchema.index({ stationId: 1, status: 1 });
+
 module.exports = mongoose.model('QueueEntry', queueEntrySchema);

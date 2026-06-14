@@ -11,4 +11,7 @@ const lockerEventSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+lockerEventSchema.index({ stationId: 1, createdAt: -1 });
+lockerEventSchema.index({ lockerId: 1, createdAt: -1 });
+
 module.exports = mongoose.model('LockerEvent', lockerEventSchema);

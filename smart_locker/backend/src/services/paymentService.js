@@ -310,7 +310,7 @@ async function fulfillCheckoutSession(session) {
       console.log('[fulfillCheckoutSession] Processing overdue fee release for lockerId:', lockerId);
       const locker = await markOverdueReleased(lockerId, updatedOrder._id);
       console.log('[fulfillCheckoutSession] Locker overdueReleasedAt marked as:', locker.overdueReleasedAt);
-      await sendPushNotification(
+      sendPushNotification(
         locker.currentUserId,
         'Overdue Fee Paid — Grace Period Started',
         `Payment confirmed! You now have a grace period to unlock locker ${locker.code} and retrieve your items.`,

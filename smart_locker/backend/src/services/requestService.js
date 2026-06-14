@@ -143,7 +143,7 @@ async function assignWaitingQueue(stationId) {
     // Send push notification for queue assignment
     const station = await Station.findById(stationId);
     const stationName = station ? station.name : 'Station';
-    await sendPushNotification(
+    sendPushNotification(
       request.userId,
       'Locker Assigned',
       `Your queuing time is over. You have assigned a locker ${freeLocker.code} at ${stationName}.`,
@@ -207,7 +207,7 @@ async function approveRequest(user, requestId) {
     }
 
     // Send push notification for queued request
-    await sendPushNotification(
+    sendPushNotification(
       request.userId,
       'Locker Request Queued',
       `Your request for a locker at ${stationName} has been approved and placed in the queue. You will be notified when a locker becomes available.`,
@@ -239,7 +239,7 @@ async function approveRequest(user, requestId) {
   await logEvent(freeLocker, 'REQUEST_APPROVED', 'User request approved and assigned', { requestId: request._id });
 
   // Send push notification for approved & assigned request
-  await sendPushNotification(
+  sendPushNotification(
     request.userId,
     'Locker Request Approved',
     `Your request for a locker at ${stationName} has been approved. Locker ${freeLocker.code} is assigned to you.`,

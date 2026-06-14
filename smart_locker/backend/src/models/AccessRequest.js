@@ -16,4 +16,7 @@ const accessRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+accessRequestSchema.index({ stationId: 1, createdAt: -1 });
+accessRequestSchema.index({ userId: 1, createdAt: -1 });
+
 module.exports = mongoose.model('AccessRequest', accessRequestSchema);

@@ -17,44 +17,70 @@ export function useDashboardData(token, user) {
       return;
     }
 
-    const [stationsData, requestsData, eventsData] = await Promise.all([
-      apiRequest('/stations', { headers }),
-      apiRequest('/requests', { headers }),
-      apiRequest('/events?limit=50', { headers })
-    ]);
-
-    setStations(stationsData.stations || []);
-    setRequests(requestsData.requests || []);
-    setEvents(eventsData.events || []);
-
-    const stationList = stationsData.stations || [];
-    const hasSelected = stationList.some((station) => station._id === selectedStationId);
-    const stationIdToLoad = hasSelected ? selectedStationId : stationList[0]?._id || '';
-
-    if (stationIdToLoad !== selectedStationId) {
-      setSelectedStationId(stationIdToLoad);
-    }
-
-    if (!stationIdToLoad) {
-      setLockers([]);
-      setQueueEntries([]);
-      setOverdueLockers([]);
-      return;
-    }
-
     const isAdmin = user.role === 'SUB_ADMIN' || user.role === 'SUPER_ADMIN';
+    const stationIdToLoad = selectedStationId;
 
-    const [lockerData, queueData, overdueData] = await Promise.all([
-      apiRequest(`/lockers?stationId=${stationIdToLoad}`, { headers }),
-      apiRequest(`/queue?stationId=${stationIdToLoad}`, { headers }),
-      isAdmin
-        ? apiRequest(`/stations/${stationIdToLoad}/overdue-lockers`, { headers })
-        : Promise.resolve({ overdueLockers: [] })
-    ]);
+    if (stationIdToLoad) {
+      // Parallelize all 6 API requests in a single round-trip
+      const [stationsData, requestsData, eventsData, lockerData, queueData, overdueData] = await Promise.all([
+        apiRequest('/stations', { headers }),
+        apiRequest('/requests', { headers }),
+        apiRequest('/events?limit=50', { headers }),
+        apiRequest(`/lockers?stationId=${stationIdToLoad}`, { headers }),
+        apiRequest(`/queue?stationId=${stationIdToLoad}`, { headers }),
+        isAdmin
+          ? apiRequest(`/stations/${stationIdToLoad}/overdue-lockers`, { headers })
+          : Promise.resolve({ overdueLockers: [] })
+      ]);
 
-    setLockers(lockerData.lockers || []);
-    setQueueEntries(queueData.queueEntries || []);
-    setOverdueLockers(overdueData.overdueLockers || []);
+      setStations(stationsData.stations || []);
+      setRequests(requestsData.requests || []);
+      setEvents(eventsData.events || []);
+      setLockers(lockerData.lockers || []);
+      setQueueEntries(queueData.queueEntries || []);
+      setOverdueLockers(overdueData.overdueLockers || []);
+
+      // If the selected station was deleted or is no longer returned, fallback
+      const stationList = stationsData.stations || [];
+      const stillExists = stationList.some((station) => station._id === stationIdToLoad);
+      if (!stillExists && stationList.length > 0) {
+        setSelectedStationId(stationList[0]._id);
+      }
+    } else {
+      // Fallback for initial load when selectedStationId is empty
+      const [stationsData, requestsData, eventsData] = await Promise.all([
+        apiRequest('/stations', { headers }),
+        apiRequest('/requests', { headers }),
+        apiRequest('/events?limit=50', { headers })
+      ]);
+
+      setStations(stationsData.stations || []);
+      setRequests(requestsData.requests || []);
+      setEvents(eventsData.events || []);
+
+      const stationList = stationsData.stations || [];
+      const fallbackStationId = stationList[0]?._id || '';
+
+      if (fallbackStationId) {
+        setSelectedStationId(fallbackStationId);
+
+        const [lockerData, queueData, overdueData] = await Promise.all([
+          apiRequest(`/lockers?stationId=${fallbackStationId}`, { headers }),
+          apiRequest(`/queue?stationId=${fallbackStationId}`, { headers }),
+          isAdmin
+            ? apiRequest(`/stations/${fallbackStationId}/overdue-lockers`, { headers })
+            : Promise.resolve({ overdueLockers: [] })
+        ]);
+
+        setLockers(lockerData.lockers || []);
+        setQueueEntries(queueData.queueEntries || []);
+        setOverdueLockers(overdueData.overdueLockers || []);
+      } else {
+        setLockers([]);
+        setQueueEntries([]);
+        setOverdueLockers([]);
+      }
+    }
   }, [headers, selectedStationId, token, user]);
 
   React.useEffect(() => {
@@ -63,7 +89,7 @@ export function useDashboardData(token, user) {
     }
 
     const intervalId = window.setInterval(() => {
-      load().catch(() => {});
+      load().catch(() => { });
     }, 3000);
 
     return () => window.clearInterval(intervalId);
