@@ -11,6 +11,28 @@ function RequestPanel({
   onReject,
   onCancel
 }) {
+  const [processing, setProcessing] = React.useState(null); // format: { id, action }
+
+  const handleApprove = async (id) => {
+    if (processing) return;
+    setProcessing({ id, action: 'approve' });
+    try {
+      await onApprove(id);
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleReject = async (id) => {
+    if (processing) return;
+    setProcessing({ id, action: 'reject' });
+    try {
+      await onReject(id);
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   if (user.role === 'USER') {
     const activeRequest = requests.find((item) => item.status === 'PENDING' || item.status === 'QUEUED');
 
@@ -78,8 +100,12 @@ function RequestPanel({
               <p>Sub-admin station: {item.stationId?.code || '-'}</p>
               <p>Note: {item.note || '-'}</p>
               <div className="actions">
-                <button onClick={() => onApprove(item._id)}>Approve</button>
-                <button className="danger" onClick={() => onReject(item._id)}>Reject</button>
+                <button disabled={processing !== null} onClick={() => handleApprove(item._id)}>
+                  {processing?.id === item._id && processing?.action === 'approve' ? 'Approving...' : 'Approve'}
+                </button>
+                <button className="danger" disabled={processing !== null} onClick={() => handleReject(item._id)}>
+                  {processing?.id === item._id && processing?.action === 'reject' ? 'Rejecting...' : 'Reject'}
+                </button>
               </div>
             </article>
           ))}
