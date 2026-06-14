@@ -2,9 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const apiRoutes = require('./routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
+const { requestLogger } = require('./middleware/requestLogger');
 
 function createApp() {
   const app = express();
+  app.use(requestLogger);
   app.use(cors());
   app.use((req, res, next) => {
     if (req.originalUrl === '/api/payments/webhook') {

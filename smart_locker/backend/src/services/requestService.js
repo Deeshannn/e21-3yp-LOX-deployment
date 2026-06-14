@@ -102,12 +102,6 @@ async function cancelRequest(user, requestId) {
 
 async function assignWaitingQueue(stationId) {
   while (true) {
-    // Sort by code ascending so the lowest-numbered locker (e.g. L1 before L2) is always picked first
-    const freeLocker = await Locker.findOne({ stationId, isBooked: false }).sort({ code: 1 });
-    if (!freeLocker) {
-      break;
-    }
-
     const queueEntry = await QueueEntry.findOne({ stationId, status: 'WAITING' }).sort({ createdAt: 1 });
     if (!queueEntry) {
       break;
@@ -121,6 +115,27 @@ async function assignWaitingQueue(stationId) {
       continue;
     }
 
+    // Sort by code ascending so the lowest-numbered locker (e.g. L1 before L2) is always picked first
+    // Atomically claim the locker to prevent concurrent double-booking
+    const freeLocker = await Locker.findOneAndUpdate(
+      { stationId, isBooked: false },
+      {
+        $set: {
+          isBooked: true,
+          currentUserId: request.userId,
+          activeRequestId: request._id,
+          reservedAt: new Date(),
+          overdueReleasedAt: null,
+          overduePaymentId: null
+        }
+      },
+      { new: true, sort: { code: 1 } }
+    );
+
+    if (!freeLocker) {
+      break;
+    }
+
     request.status = RequestStatuses.APPROVED;
     request.lockerId = freeLocker._id;
     request.approvedAt = new Date();
@@ -128,14 +143,6 @@ async function assignWaitingQueue(stationId) {
 
     queueEntry.status = 'ASSIGNED';
     await queueEntry.save();
-
-    freeLocker.isBooked = true;
-    freeLocker.currentUserId = request.userId;
-    freeLocker.activeRequestId = request._id;
-    freeLocker.reservedAt = new Date();
-    freeLocker.overdueReleasedAt = null;
-    freeLocker.overduePaymentId = null;
-    await freeLocker.save();
     await publishLockerBookingStatus(freeLocker);
 
     await logEvent(freeLocker, 'QUEUE_ASSIGNED', 'Queue front user assigned to locker', { requestId: request._id });
@@ -185,7 +192,22 @@ async function approveRequest(user, requestId) {
   }
 
   // Sort by code ascending so the lowest-numbered locker (e.g. L1 before L2) is always picked first
-  const freeLocker = await Locker.findOne({ stationId: request.stationId, isBooked: false }).sort({ code: 1 });
+  // Atomically claim the locker to prevent concurrent double-booking
+  const freeLocker = await Locker.findOneAndUpdate(
+    { stationId: request.stationId, isBooked: false },
+    {
+      $set: {
+        isBooked: true,
+        currentUserId: request.userId,
+        activeRequestId: request._id,
+        reservedAt: new Date(),
+        overdueReleasedAt: null,
+        overduePaymentId: null
+      }
+    },
+    { new: true, sort: { code: 1 } }
+  );
+
   const station = await Station.findById(request.stationId);
   const stationName = station ? station.name : 'Station';
 
@@ -227,13 +249,6 @@ async function approveRequest(user, requestId) {
     { $set: { status: 'ASSIGNED' } }
   );
 
-  freeLocker.isBooked = true;
-  freeLocker.currentUserId = request.userId;
-  freeLocker.activeRequestId = request._id;
-  freeLocker.reservedAt = new Date();
-  freeLocker.overdueReleasedAt = null;
-  freeLocker.overduePaymentId = null;
-  await freeLocker.save();
   await publishLockerBookingStatus(freeLocker);
 
   await logEvent(freeLocker, 'REQUEST_APPROVED', 'User request approved and assigned', { requestId: request._id });
