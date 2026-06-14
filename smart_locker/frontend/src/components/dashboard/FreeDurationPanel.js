@@ -25,7 +25,7 @@ function FreeDurationPanel({ stations, selectedStationId, token, onRefresh }) {
         gracePeriodMinutes: station.gracePeriodMinutes ?? 10
       });
     }
-  }, [station?._id]);
+  }, [station]); // changed from station?._id
 
   const handleChange = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: Number(value) }));
