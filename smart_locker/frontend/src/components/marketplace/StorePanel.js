@@ -833,10 +833,10 @@ function StorePanel({ user, token }) {
 
   const detailGallery = selectedProduct
     ? [
-        selectedProduct.imageUrl || createArtwork(selectedProduct),
-        createArtwork({ ...selectedProduct, artStyle: selectedProduct.artStyle }, 'thumb'),
-        createArtwork({ ...selectedProduct, artStyle: 'safe' }, 'thumb')
-      ]
+      selectedProduct.imageUrl || createArtwork(selectedProduct),
+      createArtwork({ ...selectedProduct, artStyle: selectedProduct.artStyle }, 'thumb'),
+      createArtwork({ ...selectedProduct, artStyle: 'safe' }, 'thumb')
+    ]
     : [];
 
   const resetForm = () => {
@@ -947,15 +947,15 @@ function StorePanel({ user, token }) {
     try {
       const response = editingId
         ? await apiRequest(`/products/${editingId}`, {
-            method: 'PATCH',
-            headers,
-            body: JSON.stringify(nextProduct)
-          })
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify(nextProduct)
+        })
         : await apiRequest('/products', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(nextProduct)
-          });
+          method: 'POST',
+          headers,
+          body: JSON.stringify(nextProduct)
+        });
 
       const savedProduct = response.product;
       setProducts((currentProducts) => {
@@ -1066,217 +1066,243 @@ function StorePanel({ user, token }) {
 
   const productOptions = selectedProduct?.colors || [];
 
-    const pendingOrders = orders.filter((order) => order.status === 'PENDING');
+  const pendingOrders = orders.filter((order) => order.status === 'PENDING');
 
-    if (canManage) {
-      return (
-        <section className="panel store-shell store-admin-shell">
-          <div className="store-hero">
-            <div>
-              <p className="store-kicker">Super admin store</p>
-              <h2>Manage the catalog, product cards, and pending orders</h2>
-              <p className="store-description">
-                Use the navigation bar to edit store settings, current products, add a new card, edit a selected card, or review pending orders.
-              </p>
-            </div>
-
-            <div className="store-stats">
-              <span>{products.length} products</span>
-              <span>{pendingOrders.length} pending orders</span>
-              <span>{storeSettings.categories.length} categories</span>
-            </div>
+  if (canManage) {
+    return (
+      <section className="panel store-shell store-admin-shell">
+        <div className="store-hero">
+          <div>
+            <p className="store-kicker">Super admin store</p>
+            <h2>Manage the catalog, product cards, and pending orders</h2>
+            <p className="store-description">
+              Use the navigation bar to edit store settings, current products, add a new card, edit a selected card, or review pending orders.
+            </p>
           </div>
 
-          {notice ? <AlertMessage type="success" text={notice} onClose={() => setNotice('')} /> : null}
-
-          <div className="store-admin-nav">
-            {[
-              { id: 'settings', label: 'Store settings' },
-              { id: 'products', label: 'Current products' },
-              { id: 'add-product', label: 'Add product' },
-              { id: 'edit-product', label: 'Edit product' },
-              { id: 'orders', label: 'Pending orders' }
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={adminSection === item.id ? 'filter-pill active' : 'filter-pill'}
-                onClick={() => {
-                  if (item.id === 'edit-product' && !editingId) {
-                    setNotice('Choose a product to edit first.');
-                    setAdminSection('products');
-                    return;
-                  }
-
-                  if (item.id === 'add-product') {
-                    resetForm();
-                  }
-
-                  if (item.id === 'products' && editingId) {
-                    setEditingId('');
-                  }
-
-                  setAdminSection(item.id);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="store-stats">
+            <span>{products.length} products</span>
+            <span>{pendingOrders.length} pending orders</span>
+            <span>{storeSettings.categories.length} categories</span>
           </div>
+        </div>
 
-          {adminSection === 'settings' ? (
-            <div className="store-admin-grid">
-              <section className="mini-card admin-card">
-                <div className="section-heading">
-                  <h3>Categories</h3>
-                  <p>Add or remove category options for the product editor.</p>
-                </div>
-                <div className="admin-inline-form">
-                  <input value={categoryInput} onChange={(event) => setCategoryInput(event.target.value)} placeholder="New category" />
-                  <button type="button" onClick={handleAddCategory}>
-                    Add
-                  </button>
-                </div>
-                <div className="admin-chip-grid">
-                  {storeSettings.categories.map((category) => (
-                    <button type="button" key={category} className="filter-pill" onClick={() => handleRemoveCategory(category)}>
-                      <span>{category}</span>
-                      <strong>Remove</strong>
-                    </button>
-                  ))}
-                </div>
-              </section>
+        {notice ? <AlertMessage type="success" text={notice} onClose={() => setNotice('')} /> : null}
 
-              <section className="mini-card admin-card">
-                <div className="section-heading">
-                  <h3>Delivery methods</h3>
-                  <p>Manage the labels that appear in the product form.</p>
-                </div>
-                <div className="admin-inline-form admin-inline-form-delivery">
-                  <input value={deliveryLabelInput} onChange={(event) => setDeliveryLabelInput(event.target.value)} placeholder="Delivery label" />
-                  <input type="number" min="1" value={deliveryDaysInput} onChange={(event) => setDeliveryDaysInput(event.target.value)} placeholder="Days" />
-                  <button type="button" onClick={handleAddDeliveryMethod}>
-                    Add
-                  </button>
-                </div>
-                <div className="admin-chip-grid">
-                  {storeSettings.deliveryMethods.map((method) => (
-                    <button type="button" key={method.label} className="filter-pill" onClick={() => handleRemoveDeliveryMethod(method.label)}>
-                      <span>{method.label}</span>
-                      <strong>{method.days}d</strong>
-                    </button>
-                  ))}
-                </div>
-              </section>
+        <div className="store-admin-nav">
+          {[
+            { id: 'settings', label: 'Store settings' },
+            { id: 'products', label: 'Current products' },
+            { id: 'add-product', label: 'Add product' },
+            { id: 'edit-product', label: 'Edit product' },
+            { id: 'orders', label: 'Pending orders' }
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={adminSection === item.id ? 'filter-pill active' : 'filter-pill'}
+              onClick={() => {
+                if (item.id === 'edit-product' && !editingId) {
+                  setNotice('Choose a product to edit first.');
+                  setAdminSection('products');
+                  return;
+                }
 
-              <section className="mini-card admin-card">
-                <div className="section-heading">
-                  <h3>Color palette</h3>
-                  <p>Add palette colors and remove them with one tap.</p>
-                </div>
-                <div className="admin-inline-form admin-inline-form-colors">
-                  <input value={colorNameInput} onChange={(event) => setColorNameInput(event.target.value)} placeholder="Color name" />
-                  <input type="color" value={colorValueInput} onChange={(event) => setColorValueInput(event.target.value)} />
-                  <button type="button" onClick={handleAddPaletteColor}>
-                    Add
-                  </button>
-                </div>
-                <div className="admin-chip-grid">
-                  {storeSettings.colors.map((color) => (
-                    <button type="button" key={color.name} className="filter-pill" onClick={() => handleRemovePaletteColor(color.name)}>
-                      <span className="color-dot" style={{ backgroundColor: color.value }} />
-                      <span>{color.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            </div>
-          ) : null}
+                if (item.id === 'add-product') {
+                  resetForm();
+                }
 
-          {adminSection === 'products' ? (
-            <div className="store-admin-products">
-              <div className="store-toolbar">
-                <div className="search-box">
-                  <label htmlFor="store-search">Search</label>
-                  <input
-                    id="store-search"
-                    placeholder="Search lockers, colors, features..."
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                  />
-                </div>
+                if (item.id === 'products' && editingId) {
+                  setEditingId('');
+                }
 
-                <div className="toolbar-grid">
-                  <label>
-                    <span>Min price</span>
-                    <input type="number" min="0" placeholder="0" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Max price</span>
-                    <input type="number" min="0" placeholder="99999" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Sort by</span>
-                    <select value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
-                      <option value="best-match">Best match</option>
-                      <option value="price-low">Price: low to high</option>
-                      <option value="price-high">Price: high to low</option>
-                      <option value="delivery-fast">Fastest delivery</option>
-                      <option value="delivery-fee">Lowest delivery fee</option>
-                      <option value="rating">Top rated</option>
-                    </select>
-                  </label>
-                </div>
+                setAdminSection(item.id);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {adminSection === 'settings' ? (
+          <div className="store-admin-grid">
+            <section className="mini-card admin-card">
+              <div className="section-heading">
+                <h3>Categories</h3>
+                <p>Add or remove category options for the product editor.</p>
               </div>
-
-              <div className="store-results-bar">
-                <strong>{visibleProducts.length} products found</strong>
-                <span>Search, price filters, delivery filters, and best match sorting work here only.</span>
+              <div className="admin-inline-form">
+                <input value={categoryInput} onChange={(event) => setCategoryInput(event.target.value)} placeholder="New category" />
+                <button type="button" onClick={handleAddCategory}>
+                  Add
+                </button>
               </div>
-
-              <div className="product-grid">
-                {visibleProducts.map((product) => (
-                  <article key={product.id} className="product-card">
-                    <div className="product-art">
-                      <img src={product.imageUrl || createArtwork(product)} alt={product.name} />
-                      {product.badge ? <span className="product-badge">{product.badge}</span> : null}
-                    </div>
-                    <div className="product-card-copy">
-                      <h3>{product.name}</h3>
-                      <p>{product.description}</p>
-                      <div className="product-meta-line">
-                        <strong>{formatPrice(product.price)}</strong>
-                        <span>{product.deliveryDays} days</span>
-                      </div>
-                      <div className="product-color-row">
-                        {(product.colors || []).slice(0, 4).map((color) => (
-                          <span key={color.name} title={color.name} className="product-color-dot" style={{ backgroundColor: color.value }} />
-                        ))}
-                      </div>
-                      <div className="product-footer-line">
-                        <span>{product.category}</span>
-                        <span>{product.rating.toFixed(1)} rating</span>
-                      </div>
-                    </div>
-                    <div className="product-card-actions" onClick={(event) => event.stopPropagation()}>
-                      <button type="button" className="secondary" onClick={() => handleEditProduct(product.id)}>
-                        Edit
-                      </button>
-                      <button type="button" className="danger" onClick={() => handleDeleteProduct(product.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </article>
+              <div className="admin-chip-grid">
+                {storeSettings.categories.map((category) => (
+                  <button type="button" key={category} className="filter-pill" onClick={() => handleRemoveCategory(category)}>
+                    <span>{category}</span>
+                    <strong>Remove</strong>
+                  </button>
                 ))}
               </div>
-            </div>
-          ) : null}
+            </section>
 
-          {adminSection === 'add-product' ? (
+            <section className="mini-card admin-card">
+              <div className="section-heading">
+                <h3>Delivery methods</h3>
+                <p>Manage the labels that appear in the product form.</p>
+              </div>
+              <div className="admin-inline-form admin-inline-form-delivery">
+                <input value={deliveryLabelInput} onChange={(event) => setDeliveryLabelInput(event.target.value)} placeholder="Delivery label" />
+                <input type="number" min="1" value={deliveryDaysInput} onChange={(event) => setDeliveryDaysInput(event.target.value)} placeholder="Days" />
+                <button type="button" onClick={handleAddDeliveryMethod}>
+                  Add
+                </button>
+              </div>
+              <div className="admin-chip-grid">
+                {storeSettings.deliveryMethods.map((method) => (
+                  <button type="button" key={method.label} className="filter-pill" onClick={() => handleRemoveDeliveryMethod(method.label)}>
+                    <span>{method.label}</span>
+                    <strong>{method.days}d</strong>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="mini-card admin-card">
+              <div className="section-heading">
+                <h3>Color palette</h3>
+                <p>Add palette colors and remove them with one tap.</p>
+              </div>
+              <div className="admin-inline-form admin-inline-form-colors">
+                <input value={colorNameInput} onChange={(event) => setColorNameInput(event.target.value)} placeholder="Color name" />
+                <input type="color" value={colorValueInput} onChange={(event) => setColorValueInput(event.target.value)} />
+                <button type="button" onClick={handleAddPaletteColor}>
+                  Add
+                </button>
+              </div>
+              <div className="admin-chip-grid">
+                {storeSettings.colors.map((color) => (
+                  <button type="button" key={color.name} className="filter-pill" onClick={() => handleRemovePaletteColor(color.name)}>
+                    <span className="color-dot" style={{ backgroundColor: color.value }} />
+                    <span>{color.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {adminSection === 'products' ? (
+          <div className="store-admin-products">
+            <div className="store-toolbar">
+              <div className="search-box">
+                <label htmlFor="store-search">Search</label>
+                <input
+                  id="store-search"
+                  placeholder="Search lockers, colors, features..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+              </div>
+
+              <div className="toolbar-grid">
+                <label>
+                  <span>Min price</span>
+                  <input type="number" min="0" placeholder="0" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} />
+                </label>
+                <label>
+                  <span>Max price</span>
+                  <input type="number" min="0" placeholder="99999" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} />
+                </label>
+                <label>
+                  <span>Sort by</span>
+                  <select value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+                    <option value="best-match">Best match</option>
+                    <option value="price-low">Price: low to high</option>
+                    <option value="price-high">Price: high to low</option>
+                    <option value="delivery-fast">Fastest delivery</option>
+                    <option value="delivery-fee">Lowest delivery fee</option>
+                    <option value="rating">Top rated</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="store-results-bar">
+              <strong>{visibleProducts.length} products found</strong>
+              <span>Search, price filters, delivery filters, and best match sorting work here only.</span>
+            </div>
+
+            <div className="product-grid">
+              {visibleProducts.map((product) => (
+                <article key={product.id} className="product-card">
+                  <div className="product-art">
+                    <img src={product.imageUrl || createArtwork(product)} alt={product.name} />
+                    {product.badge ? <span className="product-badge">{product.badge}</span> : null}
+                  </div>
+                  <div className="product-card-copy">
+                    <h3>{product.name}</h3>
+                    <p>{product.description}</p>
+                    <div className="product-meta-line">
+                      <strong>{formatPrice(product.price)}</strong>
+                      <span>{product.deliveryDays} days</span>
+                    </div>
+                    <div className="product-color-row">
+                      {(product.colors || []).slice(0, 4).map((color) => (
+                        <span key={color.name} title={color.name} className="product-color-dot" style={{ backgroundColor: color.value }} />
+                      ))}
+                    </div>
+                    <div className="product-footer-line">
+                      <span>{product.category}</span>
+                      <span>{product.rating.toFixed(1)} rating</span>
+                    </div>
+                  </div>
+                  <div className="product-card-actions" onClick={(event) => event.stopPropagation()}>
+                    <button type="button" className="secondary" onClick={() => handleEditProduct(product.id)}>
+                      Edit
+                    </button>
+                    <button type="button" className="danger" onClick={() => handleDeleteProduct(product.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {adminSection === 'add-product' ? (
+          <ProductFormPanel
+            title="Add product card"
+            copy="Create a new store card with the current settings, colors, and photo upload."
+            submitLabel="Add product card"
+            cancelLabel="Back to products"
+            showCancel
+            form={productForm}
+            categoryOptions={categoryOptions}
+            deliveryMethodOptions={deliveryMethodOptions}
+            colorPalette={colorPalette}
+            uploadingImage={uploadingImage}
+            onFormChange={handleFormChange}
+            onImageUpload={handleProductImageUpload}
+            onRemoveImage={handleRemoveProductImage}
+            onAddColor={handleSelectFormColor}
+            onRemoveColor={handleRemoveFormColor}
+            onSubmit={handleSaveProduct}
+            onCancel={() => {
+              resetForm();
+              setAdminSection('products');
+            }}
+          />
+        ) : null}
+
+        {adminSection === 'edit-product' ? (
+          editingId ? (
             <ProductFormPanel
-              title="Add product card"
-              copy="Create a new store card with the current settings, colors, and photo upload."
-              submitLabel="Add product card"
+              title="Edit product card"
+              copy="Update the selected product and return to the current product cards after saving."
+              submitLabel="Save changes"
               cancelLabel="Back to products"
               showCancel
               form={productForm}
@@ -1295,83 +1321,57 @@ function StorePanel({ user, token }) {
                 setAdminSection('products');
               }}
             />
-          ) : null}
+          ) : (
+            <div className="mini-card admin-card">
+              <p className="muted-text">Select a product to open the editing panel.</p>
+            </div>
+          )
+        ) : null}
 
-          {adminSection === 'edit-product' ? (
-            editingId ? (
-              <ProductFormPanel
-                title="Edit product card"
-                copy="Update the selected product and return to the current product cards after saving."
-                submitLabel="Save changes"
-                cancelLabel="Back to products"
-                showCancel
-                form={productForm}
-                categoryOptions={categoryOptions}
-                deliveryMethodOptions={deliveryMethodOptions}
-                colorPalette={colorPalette}
-                uploadingImage={uploadingImage}
-                onFormChange={handleFormChange}
-                onImageUpload={handleProductImageUpload}
-                onRemoveImage={handleRemoveProductImage}
-                onAddColor={handleSelectFormColor}
-                onRemoveColor={handleRemoveFormColor}
-                onSubmit={handleSaveProduct}
-                onCancel={() => {
-                  resetForm();
-                  setAdminSection('products');
-                }}
-              />
-            ) : (
-              <div className="mini-card admin-card">
-                <p className="muted-text">Select a product to open the editing panel.</p>
-              </div>
-            )
-          ) : null}
+        {adminSection === 'orders' ? (
+          <section className="mini-card admin-card">
+            <div className="section-heading">
+              <h3>Pending orders</h3>
+              <p>Review pending orders and change their status from this section.</p>
+            </div>
 
-          {adminSection === 'orders' ? (
-            <section className="mini-card admin-card">
-              <div className="section-heading">
-                <h3>Pending orders</h3>
-                <p>Review pending orders and change their status from this section.</p>
-              </div>
-
-              <div className="order-history-list">
-                {pendingOrders.length ? (
-                  pendingOrders.map((order) => (
-                    <article key={order.id} className="order-history-item">
-                      <div>
-                        <strong>{order.productName}</strong>
-                        <p>
-                          {order.selectedColor ? `${order.selectedColor} · ` : ''}
-                          {order.quantity} item{order.quantity > 1 ? 's' : ''}
-                        </p>
-                      </div>
-                      <div className="order-history-meta">
-                        <select
-                          value={orderStatusDrafts[order.id] || order.status}
-                          onChange={(event) => setOrderStatusDrafts((prev) => ({ ...prev, [order.id]: event.target.value }))}
-                        >
-                          {['PENDING', 'PAID', 'FAILED', 'CANCELLED'].map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                        <button type="button" onClick={() => handleUpdateOrderStatus(order.id)}>
-                          Update status
-                        </button>
-                      </div>
-                    </article>
-                  ))
-                ) : (
-                  <p className="muted-text">There are no pending orders right now.</p>
-                )}
-              </div>
-            </section>
-          ) : null}
-        </section>
-      );
-    }
+            <div className="order-history-list">
+              {pendingOrders.length ? (
+                pendingOrders.map((order) => (
+                  <article key={order.id} className="order-history-item">
+                    <div>
+                      <strong>{order.productName}</strong>
+                      <p>
+                        {order.selectedColor ? `${order.selectedColor} · ` : ''}
+                        {order.quantity} item{order.quantity > 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="order-history-meta">
+                      <select
+                        value={orderStatusDrafts[order.id] || order.status}
+                        onChange={(event) => setOrderStatusDrafts((prev) => ({ ...prev, [order.id]: event.target.value }))}
+                      >
+                        {['PENDING', 'PAID', 'FAILED', 'CANCELLED'].map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" onClick={() => handleUpdateOrderStatus(order.id)}>
+                        Update status
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="muted-text">There are no pending orders right now.</p>
+              )}
+            </div>
+          </section>
+        ) : null}
+      </section>
+    );
+  }
 
   if (selectedProduct) {
     return (
