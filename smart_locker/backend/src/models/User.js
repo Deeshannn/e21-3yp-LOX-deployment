@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const { Roles } = require('../constants/enums');
 
+const deviceSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true },
+  deviceName: { type: String, default: '' },
+  authorizedAt: { type: Date, default: Date.now }
+});
+
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -13,7 +19,8 @@ const userSchema = new mongoose.Schema(
     jobTitle: { type: String, trim: true, default: '' },
     bio: { type: String, trim: true, default: '' },
     stationIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Station' }],
-    fcmToken: { type: String, default: '' }
+    fcmToken: { type: String, default: '' },
+    devices: [deviceSchema]
   },
   { timestamps: true }
 );

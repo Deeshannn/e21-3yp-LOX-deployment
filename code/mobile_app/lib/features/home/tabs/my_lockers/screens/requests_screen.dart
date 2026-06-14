@@ -18,6 +18,7 @@ class RequestsScreen extends StatelessWidget {
     required this.user,
     required this.lockersByStation,
     required this.onRefresh,
+    required this.onLockerAction,
   });
 
   final List<AccessRequest> requests;
@@ -26,6 +27,7 @@ class RequestsScreen extends StatelessWidget {
   final UserProfile user;
   final Map<String, List<Locker>> lockersByStation;
   final Future<void> Function() onRefresh;
+  final Future<void> Function([String?]) onLockerAction;
 
   Locker? _findLockerForRequest(AccessRequest r) {
     if (r.lockerId.isEmpty) return null;
@@ -48,7 +50,9 @@ class RequestsScreen extends StatelessWidget {
     for (final r in requests) {
       if (r.status == 'APPROVED') {
         final l = _findLockerForRequest(r);
-        if (l != null && l.isBooked && (l.currentUserId == user.id || l.activeRequestId == r.id)) {
+        if (l != null &&
+            l.isBooked &&
+            (l.currentUserId == user.id || l.activeRequestId == r.id)) {
           activeRequest = r;
           activeLocker = l;
           break;
@@ -64,7 +68,10 @@ class RequestsScreen extends StatelessWidget {
           elevation: 0,
           title: const Text(
             'My Bookings',
-            style: TextStyle(fontWeight: FontWeight.w900, color: AppColors.textMain),
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: AppColors.textMain,
+            ),
           ),
         ),
         body: RefreshIndicator(
@@ -77,7 +84,10 @@ class RequestsScreen extends StatelessWidget {
               Center(
                 child: Text(
                   'No locker requests yet.',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textLabel),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textLabel,
+                  ),
                 ),
               ),
             ],
@@ -87,7 +97,9 @@ class RequestsScreen extends StatelessWidget {
     }
 
     // Filter requests list to exclude the one being controlled in the active card
-    final listRequests = requests.where((r) => r.id != activeRequest?.id).toList();
+    final listRequests = requests
+        .where((r) => r.id != activeRequest?.id)
+        .toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -96,7 +108,10 @@ class RequestsScreen extends StatelessWidget {
         elevation: 0,
         title: const Text(
           'My Bookings',
-          style: TextStyle(fontWeight: FontWeight.w900, color: AppColors.textMain),
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: AppColors.textMain,
+          ),
         ),
       ),
       body: SafeArea(
@@ -109,42 +124,154 @@ class RequestsScreen extends StatelessWidget {
               if (activeLocker != null && activeRequest != null) ...[
                 ActiveLockerCard(
                   locker: activeLocker,
-                  stationName: stationMap[activeRequest.stationId]?.name ?? activeRequest.stationName.ifEmpty('Station'),
-                  station: stationMap[activeRequest.stationId] ?? Station(
-                    id: activeRequest.stationId,
-                    name: activeRequest.stationName.ifEmpty('Station'),
-                    code: '',
-                    timezone: 'Asia/Colombo',
-                    openTime: '08:00',
-                    closeTime: '20:00',
-                    scheduleEnabled: true,
-                    emergencyMode: false,
-                  ),
+                  stationName:
+                      stationMap[activeRequest.stationId]?.name ??
+                      activeRequest.stationName.ifEmpty('Station'),
+                  station:
+                      stationMap[activeRequest.stationId] ??
+                      Station(
+                        id: activeRequest.stationId,
+                        name: activeRequest.stationName.ifEmpty('Station'),
+                        code: '',
+                        timezone: 'Asia/Colombo',
+                        openTime: '08:00',
+                        closeTime: '20:00',
+                        scheduleEnabled: true,
+                        emergencyMode: false,
+                      ),
                   client: client,
                   onRefresh: onRefresh,
+                  onLockerAction: () => onLockerAction(activeRequest!.stationId),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'REQUEST HISTORY',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.8,
-                    color: AppColors.textLabel,
-                  ),
-                ),
-                const SizedBox(height: 10),
               ],
 
               // History list
-              ...listRequests.map((request) {
-                final station = stationMap[request.stationId];
-                final stationName = station?.name ?? request.stationName.ifEmpty('Unknown station');
+              _HistorySection(
+                listRequests: listRequests,
+                stationMap: stationMap,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HistorySection extends StatefulWidget {
+  const _HistorySection({required this.listRequests, required this.stationMap});
+
+  final List<AccessRequest> listRequests;
+  final Map<String, Station> stationMap;
+
+  @override
+  State<_HistorySection> createState() => _HistorySectionState();
+}
+
+class _HistorySectionState extends State<_HistorySection> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.listRequests.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          color: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.black.withOpacity(0.06)),
+          ),
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.history_rounded,
+                        color: AppColors.olive,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'View History',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textMain,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.olive.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${widget.listRequests.length}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.olive,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  AnimatedRotation(
+                    turns: _isExpanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.textMuted,
+                      size: 26,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox(width: double.infinity),
+          secondChild: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 8),
+              ...widget.listRequests.map((request) {
+                final station = widget.stationMap[request.stationId];
+                final stationName =
+                    station?.name ??
+                    request.stationName.ifEmpty('Unknown station');
 
                 Color statusColor = AppColors.textLabel;
-                if (request.status == 'APPROVED') statusColor = AppColors.olive;
-                if (request.status == 'QUEUED') statusColor = const Color(0xFFD97706);
-                if (request.status == 'REJECTED' || request.status == 'CANCELLED') {
+                if (request.status == 'APPROVED') {
+                  statusColor = AppColors.olive;
+                }
+                if (request.status == 'QUEUED') {
+                  statusColor = const Color(0xFFD97706);
+                }
+                if (request.status == 'REJECTED' ||
+                    request.status == 'CANCELLED') {
                   statusColor = const Color(0xFFC95454);
                 }
 
@@ -167,9 +294,10 @@ class RequestsScreen extends StatelessWidget {
                             Text(
                               stationName,
                               style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textMain),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.textMain,
+                              ),
                             ),
                             Text(
                               request.status,
@@ -186,26 +314,29 @@ class RequestsScreen extends StatelessWidget {
                           Text(
                             'Note: ${request.note}',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 13,
-                                color: AppColors.textLabel),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
+                              color: AppColors.textLabel,
+                            ),
                           ),
                         if (request.lockerCode.isNotEmpty)
                           Text(
                             'Assigned locker: ${request.lockerCode}',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                color: AppColors.olive),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: AppColors.olive,
+                            ),
                           ),
                         if (request.createdAt != null) ...[
                           const SizedBox(height: 6),
                           Text(
                             'Submitted: ${request.createdAt!.toLocal().toString().split('.').first}',
                             style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600),
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ],
                       ],
@@ -215,8 +346,12 @@ class RequestsScreen extends StatelessWidget {
               }),
             ],
           ),
+          crossFadeState: _isExpanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 250),
         ),
-      ),
+      ],
     );
   }
 }

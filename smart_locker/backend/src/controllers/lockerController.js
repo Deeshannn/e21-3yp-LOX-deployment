@@ -126,7 +126,7 @@ const releaseLockerHandler = asyncHandler(async (req, res) => {
   await assignWaitingQueue(locker.stationId);
 
   if (userIdToNotify) {
-    await sendPushNotification(
+    sendPushNotification(
       userIdToNotify,
       'Locker Released',
       'You have successfully released a locker.',

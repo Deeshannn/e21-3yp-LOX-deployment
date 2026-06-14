@@ -57,7 +57,9 @@ async function createLocker(user, payload) {
     securityTopic: payload.securityTopic || `locker/${code}/security`
   });
 
+  const { assignWaitingQueue } = require('./requestService');
   await subscribeLockerState(locker);
+  await assignWaitingQueue(locker.stationId);
   return locker;
 }
 

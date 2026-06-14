@@ -33,7 +33,8 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Navigation State
   int _tabIndex = 0;
 
-  bool _loading = true;
+  bool _initialLoading = true;
+  bool _refreshing = false;
   String? _error;
   bool _savingLocation = false;
 
@@ -89,10 +90,12 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Fetches all required backend data to populate the home screen.
   Future<void> _loadData() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final isInitial = _initialLoading;
+    if (!isInitial) {
+      setState(() => _refreshing = true);
+    } else {
+      setState(() => _error = null);
+    }
     try {
       final stations = await widget.session.client.fetchStations();
       final requests = await widget.session.client.fetchRequests();
@@ -128,14 +131,40 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _stations = stations;
         _requests = requests;
-        _loading = false;
+        _initialLoading = false;
+        _refreshing = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.toString();
-        _loading = false;
+        if (isInitial) _error = error.toString();
+        _initialLoading = false;
+        _refreshing = false;
       });
+    }
+  }
+
+  /// Lightweight refresh: only re-fetches requests and the lockers for
+  /// the station that the user is currently interacting with.
+  Future<void> _refreshActiveLocker([String? stationId]) async {
+    setState(() => _refreshing = true);
+    try {
+      final requests = await widget.session.client.fetchRequests();
+
+      if (stationId != null && stationId.isNotEmpty) {
+        try {
+          final lockers = await widget.session.client.fetchLockers(stationId);
+          _lockersByStation[stationId] = lockers;
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _requests = requests;
+        _refreshing = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -154,13 +183,28 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ).showSnackBar(const SnackBar(content: Text('Location saved.')));
   }
 
-  /// Checks if there is an active (PENDING or QUEUED) access request 
-  /// associated with a specific [stationId].
+  /// Checks if there is an active access request associated with a specific [stationId].
+  ///
+  /// PENDING and QUEUED are always considered active.
+  /// APPROVED is only considered active if the user still has a currently booked locker
+  /// at this station — because AccessRequest.status is never changed back from APPROVED
+  /// when a locker is released, so old completed sessions remain as APPROVED in the DB.
   AccessRequest? _activeRequestForStation(String stationId) {
+    final lockers = _lockersByStation[stationId] ?? [];
+
     for (final r in _requests) {
-      if (r.stationId == stationId &&
-          (r.status == 'PENDING' || r.status == 'QUEUED')) {
+      if (r.stationId != stationId) continue;
+
+      if (r.status == 'PENDING' || r.status == 'QUEUED') {
         return r;
+      }
+
+      if (r.status == 'APPROVED') {
+        // Only treat as active if there is a locker currently booked to this user at this station
+        final hasActiveLocker = lockers.any(
+          (l) => l.isBooked && l.currentUserId == _user.id,
+        );
+        if (hasActiveLocker) return r;
       }
     }
     return null;
@@ -190,7 +234,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (_initialLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -261,6 +305,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               user: _user,
               lockersByStation: _lockersByStation,
               onRefresh: _loadData,
+              onLockerAction: _refreshActiveLocker,
             ),
             StoreScreen(
               client: widget.session.client,

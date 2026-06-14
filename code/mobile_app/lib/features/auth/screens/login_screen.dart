@@ -7,6 +7,8 @@ import '../../../core/utils/url_utils.dart';
 import '../../../data/models/auth_result.dart';
 import '../../../data/remote/api_client.dart';
 import '../../../core/services/biometric_service.dart';
+import '../../../core/services/device_service.dart';
+import 'otp_verification_screen.dart';
 
 /// The user login interface for the Smart Locker application.
 ///
@@ -76,6 +78,30 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _navigateToOtpScreen({
+    required String email,
+    required String deviceId,
+    required String deviceName,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => OtpVerificationScreen(
+          email: email,
+          deviceId: deviceId,
+          deviceName: deviceName,
+          onAuthSuccess: (authResult) async {
+            Navigator.of(context).pop(); // Dismiss OTP screen
+            final isBioEnabled = await BiometricService.instance.isBiometricEnabled();
+            if (isBioEnabled) {
+              await BiometricService.instance.saveCredentials(email, _passwordController.text);
+            }
+            await widget.onAuthSuccess(authResult);
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _biometricLogin() async {
     final credentials = await BiometricService.instance.getCredentials();
     if (credentials == null) return;
@@ -96,13 +122,33 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       try {
         final baseUrl = normalizeApiBaseUrl(AppConstants.defaultApiBaseUrl);
-        final result = await ApiClient(
+        final deviceData = await DeviceService.getDeviceInfo();
+        final deviceId = deviceData['deviceId'] ?? '';
+        final deviceName = deviceData['deviceName'] ?? '';
+
+        final loginResult = await ApiClient(
           baseUrl: baseUrl,
           token: '',
-        ).login(email: email, password: password);
-        await widget.onAuthSuccess(result);
+        ).mobileLogin(
+          email: email,
+          password: password,
+          deviceId: deviceId,
+          deviceName: deviceName,
+        );
+
+        if (loginResult.otpRequired) {
+          if (mounted) {
+            _navigateToOtpScreen(
+              email: email,
+              deviceId: deviceId,
+              deviceName: deviceName,
+            );
+          }
+        } else if (loginResult.authResult != null) {
+          await widget.onAuthSuccess(loginResult.authResult!);
+        }
       } catch (e) {
-        if (mounted) _showError(e.toString());
+        if (mounted) _showError(e.toString().replaceAll('Exception: ', ''));
       }
       if (mounted) setState(() => _submitting = false);
     }
@@ -126,20 +172,39 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _submitting = true);
     try {
-      final result = await ApiClient(
+      final deviceData = await DeviceService.getDeviceInfo();
+      final deviceId = deviceData['deviceId'] ?? '';
+      final deviceName = deviceData['deviceName'] ?? '';
+
+      final loginResult = await ApiClient(
         baseUrl: baseUrl,
         token: '',
-      ).login(email: email, password: password);
+      ).mobileLogin(
+        email: email,
+        password: password,
+        deviceId: deviceId,
+        deviceName: deviceName,
+      );
 
-      // Save/update credentials for biometric login if enabled
-      final isBioEnabled = await BiometricService.instance.isBiometricEnabled();
-      if (isBioEnabled) {
-        await BiometricService.instance.saveCredentials(email, password);
+      if (loginResult.otpRequired) {
+        if (mounted) {
+          _navigateToOtpScreen(
+            email: email,
+            deviceId: deviceId,
+            deviceName: deviceName,
+          );
+        }
+      } else if (loginResult.authResult != null) {
+        // Save/update credentials for biometric login if enabled
+        final isBioEnabled = await BiometricService.instance.isBiometricEnabled();
+        if (isBioEnabled) {
+          await BiometricService.instance.saveCredentials(email, password);
+        }
+
+        await widget.onAuthSuccess(loginResult.authResult!);
       }
-
-      await widget.onAuthSuccess(result);
     } catch (e) {
-      if (mounted) _showError(e.toString());
+      if (mounted) _showError(e.toString().replaceAll('Exception: ', ''));
     }
     if (mounted) setState(() => _submitting = false);
   }
